@@ -1,0 +1,30 @@
+# Quarto
+/_output/
+/.quarto/
+*.pdf
+!database_management_report.pdf
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+
+# Data — raw dumps can be large, keep them out of git
+data/raw/**
+!data/raw/.gitkeep
+data/processed/*.csv
+!data/processed/.gitkeep
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# MySQL dumps & credentials
+*.sql.gz
+*.dump
+credentials.yml
+secrets.env

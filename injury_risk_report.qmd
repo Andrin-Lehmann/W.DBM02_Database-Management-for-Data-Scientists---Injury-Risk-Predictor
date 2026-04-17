@@ -1,0 +1,367 @@
+---
+title: ""
+subtitle: ""
+author: ""
+date: ""
+number-sections: true
+number-depth: 3
+toc: false
+format:
+  pdf:
+    fontsize: 10pt
+    colorlinks: true
+    highlight-style: tango
+    code-line-numbers: true
+    fig-pos: H
+    code-wrap: wrap
+editor_options:
+  chunk_output_type: console
+---
+
+\begin{titlepage}
+\thispagestyle{empty}
+\centering
+
+\vspace*{3cm}
+
+{\Huge Injury Risk Predictor Dashboard \par}
+\vspace{0.8cm}
+{\Large HSLU -- Module DBM Project Report -- Group TBD \par}
+
+\vspace{3cm}
+
+Andrin Kohler (andrin.kohler@stud.hslu.ch)\\
+\vspace{0.2cm}
+Teammate 2 (tbd@stud.hslu.ch) \\
+\vspace{0.2cm}
+Teammate 3 (tbd@stud.hslu.ch) \\
+\vspace{0.2cm}
+Teammate 4 (tbd@stud.hslu.ch)
+
+\vfill
+\today
+\end{titlepage}
+
+\clearpage
+\setcounter{tocdepth}{2}
+\thispagestyle{empty}
+\tableofcontents
+
+\clearpage
+\pagenumbering{arabic}
+\setcounter{page}{1}
+
+# Introduction & Context {#sec-Introduction}
+
+Soft-tissue injuries in professional football cost clubs an estimated €500M per season in lost wages and medical costs, with hamstring strains alone accounting for more than 15% of all time-loss injuries. A growing body of sports-science literature (Gabbett, 2016; Hulin et al., 2016) shows that a disproportionate spike in acute training load relative to chronically accumulated fitness is a leading predictor of non-contact injuries. Yet most clubs still rely on subjective session-RPE or on proprietary black-box wearable dashboards that coaches cannot interrogate.
+
+The primary objective of this project is to demonstrate core database management concepts. Using a football injury prevention context as an illustrative setting, we design a relational data model, implement it in MySQL, and integrate three independent data sources using an ELT approach. SQL is then used to derive the Acute-to-Chronic Workload Ratio (ACWR) — our injury risk key figure — and apply a published decision rule in an interactive Metabase dashboard.
+
+Following the OECD Data Value Cycle from the lecture, raw data is transformed into structured information and decision-relevant metrics. Workload telemetry, injury event records, and player features are combined and aggregated at the player-day level, and finally visualized with an interactive Metabase dashboard. This enables parameterized analysis and the application of a mathematically defined decision rule to support transparent, evidence-based load management decisions for a football coach.
+
+# Project Idea & Use Case {#sec-ProjectIdea}
+
+Our *Injury Risk Predictor Dashboard* project aims to support data-driven load management decisions by combining workload telemetry, injury event history, and static player features. A football coach or sports scientist faces the challenge of *deciding which players to rest or whose training load to reduce* during the weekly microcycle. Our database and our dashboard create value by enabling coaches to identify players whose current workload profile places them at elevated injury risk, based on quantitative and objective metrics. For this purpose we integrate three complementary data perspectives:
+
+1.  **Workload telemetry**: daily session load, distance covered, high-speed running, accelerations
+2.  **Injury event history**: recorded injuries with type, severity, absence duration
+3.  **Player features**: static attributes — age, position, height, weight, prior injury history
+
+## Data Sources
+
+To keep the project focused on the core learning objectives of this module we deliberately rely on publicly available datasets from Kaggle and sports-science research repositories. These datasets are well-structured and widely cited in the injury-prediction literature. For the purpose of this project as a proof of concept, they are suitable, but for any production-level application, live data from a club's wearable provider (Catapult, STATSports) would need to be integrated.
+
+**Multimodal Sports Injury Dataset**
+
+-   Source: Kaggle / sports-science research repository
+-   Type: `.csv`
+-   Content: Daily workload metrics — session RPE, total distance (m), high-speed running distance (m), accelerations, decelerations, heart-rate zones, perceived fatigue
+-   Purpose: Provides the time-series workload signal needed to compute rolling acute and chronic loads
+
+**European Football Injuries Dataset (2020–2025)**
+
+-   Source: Kaggle
+-   Type: `.csv`
+-   Content: Injury records across major European leagues — player name, club, injury type, body region, date of injury, absence duration, match or training context
+-   Purpose: Provides the ground-truth injury event labels and league-level benchmarking context
+
+**University Football Injury Prediction Dataset**
+
+-   Source: Kaggle
+-   Type: `.csv`
+-   Content: ~800 players with static features (age, height, weight, position, prior injuries) and binary injury-within-season label
+-   Purpose: Provides the player master data and a validation label for the risk model
+
+The three datasets are linked via a composite strategy: the University dataset serves as the canonical *player universe*, the Multimodal dataset supplies the workload time-series per player, and the European dataset provides league-level injury frequency benchmarks joined at the position and age-group level. See @sec-DatabaseModel for the integration logic.
+
+## Key Figures
+
+### Acute:Chronic Workload Ratio (ACWR / IRS)
+
+The core key figure is the **Acute-to-Chronic Workload Ratio**, which we label *Injury Risk Score (IRS)*. For each player $i$ on each day $t$, let $L_{i,t}$ denote the daily workload (e.g. session RPE × duration, or total distance). The acute load is the average workload over the past 7 days; the chronic load is the average over the past 28 days:
+
+$$
+\text{AcuteLoad}_{i,t} = \frac{1}{7} \sum_{s=t-6}^{t} L_{i,s}
+$$ {#eq-acute-load}
+
+$$
+\text{ChronicLoad}_{i,t} = \frac{1}{28} \sum_{s=t-27}^{t} L_{i,s}
+$$ {#eq-chronic-load}
+
+$$
+\text{IRS}_{i,t} = \frac{\text{AcuteLoad}_{i,t}}{\text{ChronicLoad}_{i,t}}
+$$ {#eq-irs}
+
+An IRS value substantially above 1 indicates the player is currently accumulating load faster than their long-term conditioning supports — the "sweet spot" violation associated with elevated injury risk in the literature.
+
+### Injury Rate Validation Metric
+
+To validate that the IRS bands meaningfully separate risk, we compute the observed injury rate per IRS band across the European injuries dataset. For each band $b \in \{\text{high}, \text{optimal}, \text{under}\}$:
+
+$$
+\text{InjuryRate}_b = \frac{\text{InjuryEvents}_b}{\text{PlayerDays}_b}
+$$ {#eq-injury-rate}
+
+A well-calibrated model shows a higher injury rate in the "high" band than in the "optimal" band.
+
+## Decision Rule
+
+Based on the IRS, the coach applies the following decision rule for each player:
+
+| IRS band | Range | Action |
+|----------|-------|--------|
+| High risk | IRS ≥ 1.5 | Reduce load / rest |
+| Optimal | 0.8 ≤ IRS < 1.5 | Maintain plan |
+| Undertraining | IRS < 0.8 | Progressively increase load |
+
+These thresholds follow Gabbett (2016) and subsequent validations in professional football cohorts.
+
+# Data Model & Database Schema {#sec-DatabaseModel}
+
+## Source Data Analysis
+
+### Multimodal Sports Injury Dataset
+
+*[Describe columns, example rows, data types. Add screenshot from head() in a Python chunk.]*
+
+### European Football Injuries Dataset
+
+*[Describe columns, example rows, data types.]*
+
+### University Football Injury Prediction Dataset
+
+*[Describe columns, example rows, data types.]*
+
+### Deriving the Conceptual Model from Source Data
+
+*[Walk through how entities were identified across the three sources, where they overlap, where they diverge, and how the integration key was chosen.]*
+
+## Conceptual Model
+
+*[Insert ER diagram here: entities = Player, Team, Position, TrainingSession, Match, Injury, LoadMetrics, DateDim. Highlight the M:N relationship — Player↔Match via Appearance, and Player↔Injury (a player can have many injuries, and an injury record may span body regions).]*
+
+Entities:
+
+- **Player** — player master from University dataset, enriched where names match the European injuries file
+- **Team** — club / national team / university team
+- **Position** — GK, DEF, MID, FWD with sub-categories
+- **TrainingSession** — dated session per player with workload attributes
+- **Match** — dated match per team; Player↔Match is M:N via an Appearance bridge
+- **Injury** — dated injury event with body region, type, absence duration
+- **LoadMetrics** — per-player, per-date derived acute/chronic load table (materialized)
+- **DateDim** — calendar dimension
+
+Relationships:
+
+- Player → Team (N:1)
+- Player → Position (N:1)
+- Player → TrainingSession (1:N)
+- Player ↔ Match (M:N, via Appearance)
+- Player → Injury (1:N)
+- TrainingSession → DateDim (N:1)
+
+## Physical database schema in DDL
+
+See `sql/01_schema/01_create_tables.sql` for the full DDL.
+
+### Key Structural Elements
+
+#### Primary Keys
+
+*[All entities use surrogate `INT AUTO_INCREMENT` primary keys to decouple from source-data natural keys that may contain encoding inconsistencies.]*
+
+#### Foreign Keys
+
+*[Enforced at the InnoDB engine level to guarantee referential integrity during ELT.]*
+
+#### Data Type Rationale
+
+*[DECIMAL for workload metrics, DATE for session/match/injury dates, VARCHAR sized to observed maxima plus buffer.]*
+
+#### Index Strategy
+
+*[Discussed in depth in @sec-Efficiency.]*
+
+### Schema Alignment with Conceptual Model
+
+*[Map each ER entity/relationship to its DDL realization.]*
+
+### Third Normal Form Rationale
+
+*[Show that no non-key attribute is transitively dependent on a non-key attribute. Position-specific benchmarks live in a Position table, team info in a Team table, so player rows carry only FKs.]*
+
+# Loading & Transforming the Data {#sec-LoadingData}
+
+## Loading Logic
+
+Following the ELT principle, each of the three source CSVs is first loaded unchanged into a staging table using `LOAD DATA LOCAL INFILE`. All transformations — key generation, deduplication, player-name fuzzy matching between the European and University datasets, derivation of rolling workloads — are performed inside MySQL via `INSERT ... SELECT` statements.
+
+## Rationale for This Approach
+
+*[Why ELT over ETL: reproducibility, server-side performance, keeps the Python layer thin.]*
+
+## Dataset Integration Logic
+
+*[Join key strategy — how the three datasets are bridged. Explicit about what is matched exactly vs. what is joined at a coarser grain (position × age-group benchmarks).]*
+
+## SQL Snippet — Loading Player Master
+
+*[Show the INSERT INTO dim_player SELECT DISTINCT ... block here.]*
+
+## SQL Snippet — Loading Load Metrics
+
+*[Show the INSERT INTO fact_load_metrics SELECT ... with the rolling window.]*
+
+# Analyzing & Evaluating Data {#sec-analyzing-evaluating-data}
+
+## The IRS Query
+
+The main analytical query computes, for each player and date, the acute load, chronic load, and IRS, then classifies each row into a risk band. The query uses:
+
+1. **CTE** — define daily aggregated load
+2. **JOIN** (3×) — player, position, team
+3. **WINDOW FUNCTION** (`AVG() OVER (...)`) — rolling 7- and 28-day averages
+4. **CASE WHEN** — band classification
+5. **GROUP BY** — aggregate to player-day
+6. **HAVING** — filter players with sufficient history
+7. **ORDER BY** — rank by IRS
+8. **WHERE** — date range parameter
+9. **SELECT DISTINCT** — deduplicate session rows
+10. **AVG / SUM / COUNT** — aggregates
+11. **COALESCE** — null handling for missing sessions
+12. **LEFT JOIN** — include players without injuries
+13. **UNION** — combine training and match load
+14. **LIMIT** — top-N ranking for dashboard
+15. **ROUND** — formatting
+
+*(15+ keywords — satisfies the "appropriate complexity" criterion.)*
+
+See `sql/04_analytics/40_irs_rolling_window.sql`.
+
+## Calculating KPIs and Decision Rules
+
+*[Walk through the query structure block by block, show result snippet, connect back to the @eq-irs definition.]*
+
+## Validation Against Observed Injuries
+
+*[Show the cross-tab: IRS band × observed injury within next 7 days, demonstrating the rule works.]*
+
+# Efficiency & Query Performance {#sec-Efficiency}
+
+## Baseline Query and Performance Context
+
+*[Run the IRS query on the full dataset, capture `EXPLAIN ANALYZE` output.]*
+
+## Analysis without Indexes (Baseline)
+
+*[Screenshot execution plan, note full table scans, measure runtime.]*
+
+## Optimization Approach 1: Composite Index on (player_id, session_date)
+
+*[Rationale — window function partitions on player_id and orders by date. Screenshot after.]*
+
+## Optimization Approach 2: Materialized IRS Summary Table
+
+*[MySQL has no true materialized views; we precompute `fact_load_metrics` nightly via INSERT...SELECT. Metabase queries this cheap denormalized table.]*
+
+## Optimization Approach 3: Selective Filtering via Date Partition
+
+*[Most dashboard queries only look at a rolling window. Narrow the working set.]*
+
+## Performance Comparison
+
+| Approach | Rows scanned | Runtime (ms) | Speedup |
+|---|---|---|---|
+| Baseline | tbd | tbd | 1× |
+| + indexes | tbd | tbd | tbd× |
+| + materialized | tbd | tbd | tbd× |
+| + date filter | tbd | tbd | tbd× |
+
+# Visualization & Decision Support {#sec-Visualization}
+
+## Setting up Metabase
+
+*[Docker setup on the VM, connection to MySQL with a read-only analytics user.]*
+
+## From Queries to Visualizations
+
+*[Each SQL query in `sql/04_analytics/` maps to one Metabase card.]*
+
+## Validating Results of Metabase Queries
+
+*[Show that the card output matches the raw SQL output — same numbers, different presentation.]*
+
+## Dashboard "Injury Risk Predictor" {#sec-Dashboard}
+
+### Player Risk Ranking Card
+
+*[Screenshot. Sorted by IRS descending, colour-coded by band.]*
+
+### IRS-over-Time Card
+
+*[Screenshot. Line chart per selected player with reference bands at 0.8 and 1.5.]*
+
+### Injury Hotspot Card
+
+*[Screenshot. Heatmap of injury count by position and body region.]*
+
+### Interactive Parameters
+
+- **Player filter** — single-select
+- **Date range** — rolling window picker
+- **Workload metric** — RPE vs. distance vs. high-speed running
+- **IRS threshold** — slider for the high-risk cutoff (default 1.5)
+
+## Applying the Decision Rule
+
+*[Scenario: Coach Andrin opens the dashboard Monday morning before the week's first training session. Player X shows IRS = 1.62, in the high-risk band. Coach reduces Player X's planned high-intensity session to a mobility/recovery session. Rule applied, decision logged.]*
+
+# Conclusions & Lessons Learned {#sec-Conclusion}
+
+## Working with the Database
+
+*[3NF tradeoffs, MySQL-specific quirks (no materialized views, utf8mb4 collation gotchas), LOAD DATA vs. INSERT performance.]*
+
+## Project Organization
+
+*[What worked in weekly splits, what didn't.]*
+
+## Teamwork
+
+*[Git workflow, how SQL changes were reviewed.]*
+
+## Use of Artificial Intelligence
+
+*[Full disclosure of AI tools used and purposes: e.g. Claude for schema review, ChatGPT for SQL query refactoring, Copilot for boilerplate — per rubric requirement.]*
+
+# References {.unnumbered}
+
+Gabbett, T. J. (2016). *The training-injury prevention paradox: should athletes be training smarter and harder?* British Journal of Sports Medicine, 50(5), 273–280.
+
+Hulin, B. T. et al. (2016). *The acute:chronic workload ratio predicts injury.* British Journal of Sports Medicine, 50(4), 231–236.
+
+OECD (2015). *Data-Driven Innovation: Big Data for Growth and Well-Being.* OECD Publishing.
+
+# Appendix {.unnumbered}
+
+*[Full SQL listings if not already inline, extended EXPLAIN plans, additional dashboard screenshots.]*
