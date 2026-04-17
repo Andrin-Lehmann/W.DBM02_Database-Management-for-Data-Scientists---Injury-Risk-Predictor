@@ -30,7 +30,7 @@ editor_options:
 
 \vspace{3cm}
 
-Andrin Kohler (andrin.kohler@stud.hslu.ch)\\
+Andrin Lehmann (andrin.lehmann@stud.hslu.ch)\\
 \vspace{0.2cm}
 Teammate 2 (tbd@stud.hslu.ch) \\
 \vspace{0.2cm}
