@@ -2,171 +2,217 @@
 -- Injury Risk Predictor — Physical Schema (3NF)
 -- Module: DBM HSLU
 -- =============================================================================
--- Design notes:
---   * 8 entities (>= 5 required)
---   * One M:N relationship: Player <-> Match via Appearance
---   * 15+ attributes across the schema
---   * Surrogate INT AUTO_INCREMENT PKs everywhere for ELT stability
---   * InnoDB with utf8mb4 for Unicode-safe player names
+-- Source datasets:
+--   S1: multimodal_sports_injury_dataset.csv  (anonymous athletes, training sessions)
+--   S2: full_dataset_thesis - 1.csv           (named European players, injury records)
+--   S3: data.csv                              (anonymous benchmark profiles, University)
+--
+-- Integration strategy:
+--   S1, S2, S3 have no shared player-level identifier and cannot be joined
+--   at player level. Integration is achieved via the conformed dimension
+--   dim_position (GK / DEF / MID / FWD), which is referenced by both
+--   dim_player (S2) and fact_player_profile (S3).
+--
+-- Design notes (Rubric compliance):
+--   * 9 entities  (>= 5 required)
+--   * 1 M:N relationship: Player <-> Club via bridge_player_club  (Rule R3)
+--   * 25+ attributes across the schema  (>= 15 required)
+--   * Third Normal Form throughout: no transitive or partial dependencies
+--   * Surrogate INT AUTO_INCREMENT PKs for ELT stability
+--   * InnoDB / utf8mb4
 -- =============================================================================
 
 SET FOREIGN_KEY_CHECKS = 0;
 
 -- ---------------------------------------------------------------------------
--- Dimension: Date
+-- S1 | Dimension: Athlete
+-- One row per anonymous athlete from multimodal_sports_injury_dataset.csv.
+-- Static profile attributes separated from session-level measurements (3NF).
 -- ---------------------------------------------------------------------------
-CREATE TABLE `dim_date` (
-  `date_id`   INT         NOT NULL AUTO_INCREMENT,
-  `full_date` DATE        NOT NULL,
-  `year`      SMALLINT    NOT NULL,
-  `quarter`   TINYINT     NOT NULL,
-  `month`     TINYINT     NOT NULL,
-  `week`      TINYINT     NOT NULL,
-  `day`       TINYINT     NOT NULL,
-  `dow`       TINYINT     NOT NULL,  -- day-of-week 1..7
-  PRIMARY KEY (`date_id`),
-  UNIQUE KEY `uq_full_date` (`full_date`)
+CREATE TABLE `dim_athlete` (
+  `athlete_id`        INT         NOT NULL AUTO_INCREMENT,
+  `source_athlete_id` INT         NOT NULL,        -- original athlete_id in CSV
+  `sport_type`        VARCHAR(64) DEFAULT NULL,
+  `gender`            VARCHAR(16) DEFAULT NULL,
+  `age`               TINYINT     DEFAULT NULL,
+  `bmi`               DECIMAL(5,2) DEFAULT NULL,
+  PRIMARY KEY (`athlete_id`),
+  UNIQUE KEY `uq_source_athlete` (`source_athlete_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 -- ---------------------------------------------------------------------------
--- Dimension: Team
+-- S1 | Fact: Session
+-- One row per training session from multimodal_sports_injury_dataset.csv.
+-- Contains all per-session physiological, biomechanical, and load metrics.
 -- ---------------------------------------------------------------------------
-CREATE TABLE `dim_team` (
-  `team_id`       INT          NOT NULL AUTO_INCREMENT,
-  `team_name`     VARCHAR(128) NOT NULL,
-  `country`       VARCHAR(64)  DEFAULT NULL,
-  `league`        VARCHAR(64)  DEFAULT NULL,
-  PRIMARY KEY (`team_id`),
-  UNIQUE KEY `uq_team_name` (`team_name`)
+CREATE TABLE `fact_session` (
+  `session_id`            INT           NOT NULL AUTO_INCREMENT,
+  `athlete_id`            INT           NOT NULL,  -- FK → dim_athlete
+  `source_session_id`     INT           NOT NULL,  -- original session_id in CSV
+  `heart_rate`            DECIMAL(6,2)  DEFAULT NULL,
+  `body_temperature`      DECIMAL(5,2)  DEFAULT NULL,
+  `hydration_level`       DECIMAL(5,2)  DEFAULT NULL,
+  `sleep_quality`         DECIMAL(5,2)  DEFAULT NULL,
+  `recovery_score`        DECIMAL(5,2)  DEFAULT NULL,
+  `stress_level`          DECIMAL(5,2)  DEFAULT NULL,
+  `muscle_activity`       DECIMAL(7,4)  DEFAULT NULL,
+  `joint_angles`          DECIMAL(6,2)  DEFAULT NULL,
+  `gait_speed`            DECIMAL(5,2)  DEFAULT NULL,
+  `cadence`               DECIMAL(6,2)  DEFAULT NULL,
+  `step_count`            INT           DEFAULT NULL,
+  `jump_height`           DECIMAL(5,2)  DEFAULT NULL,
+  `ground_reaction_force` DECIMAL(8,2)  DEFAULT NULL,
+  `range_of_motion`       DECIMAL(6,2)  DEFAULT NULL,
+  `training_intensity`    VARCHAR(32)   DEFAULT NULL,
+  `training_duration`     DECIMAL(6,2)  DEFAULT NULL,
+  `training_load`         DECIMAL(8,2)  DEFAULT NULL,  -- input for IRS calculation
+  `fatigue_index`         DECIMAL(5,2)  DEFAULT NULL,
+  `injury_occurred`       TINYINT(1)    DEFAULT NULL,  -- 0 = no, 1 = yes
+  `playing_surface`       VARCHAR(32)   DEFAULT NULL,
+  `ambient_temperature`   DECIMAL(5,2)  DEFAULT NULL,
+  `humidity`              DECIMAL(5,2)  DEFAULT NULL,
+  `altitude`              DECIMAL(7,2)  DEFAULT NULL,
+  PRIMARY KEY (`session_id`),
+  KEY `idx_session_athlete` (`athlete_id`),
+  CONSTRAINT `fk_session_athlete`
+    FOREIGN KEY (`athlete_id`) REFERENCES `dim_athlete` (`athlete_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 -- ---------------------------------------------------------------------------
--- Dimension: Position
+-- Conformed Dimension: Position  (shared by S2 and S3)
+-- Bridges dim_player (S2) and fact_player_profile (S3) for cross-source
+-- analysis at position-group level.
 -- ---------------------------------------------------------------------------
 CREATE TABLE `dim_position` (
-  `position_id`    INT         NOT NULL AUTO_INCREMENT,
-  `position_code`  VARCHAR(8)  NOT NULL,   -- GK, DEF, MID, FWD
-  `position_name`  VARCHAR(32) NOT NULL,
+  `position_id`   INT         NOT NULL AUTO_INCREMENT,
+  `position_code` VARCHAR(8)  NOT NULL,  -- GK | DEF | MID | FWD
+  `position_name` VARCHAR(32) NOT NULL,
   PRIMARY KEY (`position_id`),
   UNIQUE KEY `uq_position_code` (`position_code`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 -- ---------------------------------------------------------------------------
--- Dimension: Player
+-- S2 | Dimension: Player
+-- One row per named European player from full_dataset_thesis - 1.csv.
 -- ---------------------------------------------------------------------------
 CREATE TABLE `dim_player` (
-  `player_id`       INT          NOT NULL AUTO_INCREMENT,
-  `player_name`     VARCHAR(128) NOT NULL,
-  `team_id`         INT          DEFAULT NULL,
-  `position_id`     INT          DEFAULT NULL,
-  `date_of_birth`   DATE         DEFAULT NULL,
-  `height_cm`       DECIMAL(5,2) DEFAULT NULL,
-  `weight_kg`       DECIMAL(5,2) DEFAULT NULL,
-  `prior_injuries`  INT          DEFAULT 0,
+  `player_id`   INT          NOT NULL AUTO_INCREMENT,
+  `player_name` VARCHAR(128) NOT NULL,
+  `position_id` INT          DEFAULT NULL,  -- FK → dim_position
   PRIMARY KEY (`player_id`),
-  UNIQUE KEY `uq_player_name_team` (`player_name`, `team_id`),
-  KEY `idx_team_id`     (`team_id`),
-  KEY `idx_position_id` (`position_id`),
-  CONSTRAINT `fk_player_team`     FOREIGN KEY (`team_id`)     REFERENCES `dim_team`     (`team_id`),
-  CONSTRAINT `fk_player_position` FOREIGN KEY (`position_id`) REFERENCES `dim_position` (`position_id`)
+  UNIQUE KEY `uq_player_name` (`player_name`),
+  KEY `idx_player_position` (`position_id`),
+  CONSTRAINT `fk_player_position`
+    FOREIGN KEY (`position_id`) REFERENCES `dim_position` (`position_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 -- ---------------------------------------------------------------------------
--- Fact: Training Session (1:N from Player)
+-- S2 | Dimension: Club
+-- One row per club from full_dataset_thesis - 1.csv.
 -- ---------------------------------------------------------------------------
-CREATE TABLE `fact_training_session` (
-  `session_id`          INT          NOT NULL AUTO_INCREMENT,
-  `player_id`           INT          NOT NULL,
-  `date_id`             INT          NOT NULL,
-  `rpe`                 DECIMAL(4,1) DEFAULT NULL,  -- Rate of Perceived Exertion (0-10)
-  `duration_min`        SMALLINT     DEFAULT NULL,
-  `total_distance_m`    DECIMAL(8,1) DEFAULT NULL,
-  `hsr_distance_m`      DECIMAL(7,1) DEFAULT NULL,  -- high-speed running
-  `sprint_count`        SMALLINT     DEFAULT NULL,
-  `accelerations`       SMALLINT     DEFAULT NULL,
-  `decelerations`       SMALLINT     DEFAULT NULL,
-  `avg_hr_bpm`          SMALLINT     DEFAULT NULL,
-  `max_hr_bpm`          SMALLINT     DEFAULT NULL,
-  PRIMARY KEY (`session_id`),
-  KEY `idx_session_player_date` (`player_id`, `date_id`),
-  KEY `idx_session_date`        (`date_id`),
-  CONSTRAINT `fk_session_player` FOREIGN KEY (`player_id`) REFERENCES `dim_player` (`player_id`),
-  CONSTRAINT `fk_session_date`   FOREIGN KEY (`date_id`)   REFERENCES `dim_date`   (`date_id`)
+CREATE TABLE `dim_club` (
+  `club_id`   INT          NOT NULL AUTO_INCREMENT,
+  `club_name` VARCHAR(128) NOT NULL,
+  `league`    VARCHAR(64)  DEFAULT NULL,
+  PRIMARY KEY (`club_id`),
+  UNIQUE KEY `uq_club_name` (`club_name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 -- ---------------------------------------------------------------------------
--- Fact: Match (the 'one' side before we add the bridge)
+-- S2 | Bridge: Player <-> Club  [M:N]                            (Rule R3)
+-- A player can play for multiple clubs across seasons;
+-- a club has multiple players each season.
+-- Relationship attributes: season (e.g. '20/21')
 -- ---------------------------------------------------------------------------
-CREATE TABLE `fact_match` (
-  `match_id`      INT NOT NULL AUTO_INCREMENT,
-  `date_id`       INT NOT NULL,
-  `home_team_id`  INT NOT NULL,
-  `away_team_id`  INT NOT NULL,
-  `home_goals`    TINYINT DEFAULT NULL,
-  `away_goals`    TINYINT DEFAULT NULL,
-  `competition`   VARCHAR(64) DEFAULT NULL,
-  PRIMARY KEY (`match_id`),
-  KEY `idx_match_date`       (`date_id`),
-  KEY `idx_match_home_team`  (`home_team_id`),
-  KEY `idx_match_away_team`  (`away_team_id`),
-  CONSTRAINT `fk_match_date`       FOREIGN KEY (`date_id`)      REFERENCES `dim_date` (`date_id`),
-  CONSTRAINT `fk_match_home_team`  FOREIGN KEY (`home_team_id`) REFERENCES `dim_team` (`team_id`),
-  CONSTRAINT `fk_match_away_team`  FOREIGN KEY (`away_team_id`) REFERENCES `dim_team` (`team_id`)
+CREATE TABLE `bridge_player_club` (
+  `player_club_id` INT        NOT NULL AUTO_INCREMENT,
+  `player_id`      INT        NOT NULL,  -- FK → dim_player
+  `club_id`        INT        NOT NULL,  -- FK → dim_club
+  `season`         VARCHAR(8) NOT NULL,  -- e.g. '20/21'
+  PRIMARY KEY (`player_club_id`),
+  UNIQUE KEY `uq_player_club_season` (`player_id`, `club_id`, `season`),
+  KEY `idx_bpc_club` (`club_id`),
+  CONSTRAINT `fk_bpc_player` FOREIGN KEY (`player_id`) REFERENCES `dim_player` (`player_id`),
+  CONSTRAINT `fk_bpc_club`   FOREIGN KEY (`club_id`)   REFERENCES `dim_club`   (`club_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 -- ---------------------------------------------------------------------------
--- Bridge: Appearance  (the M:N relationship between Player and Match)
--- ---------------------------------------------------------------------------
-CREATE TABLE `bridge_appearance` (
-  `appearance_id`     INT NOT NULL AUTO_INCREMENT,
-  `player_id`         INT NOT NULL,
-  `match_id`          INT NOT NULL,
-  `minutes_played`    SMALLINT DEFAULT NULL,
-  `distance_covered_m` DECIMAL(8,1) DEFAULT NULL,
-  `match_rpe`         DECIMAL(4,1) DEFAULT NULL,
-  PRIMARY KEY (`appearance_id`),
-  UNIQUE KEY `uq_player_match` (`player_id`, `match_id`),
-  KEY `idx_appearance_match` (`match_id`),
-  CONSTRAINT `fk_appearance_player` FOREIGN KEY (`player_id`) REFERENCES `dim_player` (`player_id`),
-  CONSTRAINT `fk_appearance_match`  FOREIGN KEY (`match_id`)  REFERENCES `fact_match` (`match_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-
--- ---------------------------------------------------------------------------
--- Fact: Injury (1:N from Player)
+-- S2 | Fact: Injury
+-- One row per injury event from full_dataset_thesis - 1.csv.
+-- References bridge_player_club to capture player + club + season context.
 -- ---------------------------------------------------------------------------
 CREATE TABLE `fact_injury` (
-  `injury_id`        INT          NOT NULL AUTO_INCREMENT,
-  `player_id`        INT          NOT NULL,
-  `date_id`          INT          NOT NULL,
-  `injury_type`      VARCHAR(64)  DEFAULT NULL,  -- muscle, joint, ligament, ...
-  `body_region`      VARCHAR(64)  DEFAULT NULL,  -- hamstring, knee, ankle, ...
-  `severity`         VARCHAR(16)  DEFAULT NULL,  -- minor | moderate | severe
-  `absence_days`     SMALLINT     DEFAULT NULL,
-  `context`          VARCHAR(16)  DEFAULT NULL,  -- training | match
+  `injury_id`      INT          NOT NULL AUTO_INCREMENT,
+  `player_club_id` INT          NOT NULL,  -- FK → bridge_player_club
+  `injury_type`    VARCHAR(128) DEFAULT NULL,
+  `days_absent`    SMALLINT     DEFAULT NULL,
+  `games_missed`   SMALLINT     DEFAULT NULL,
+  `injury_from`    DATE         DEFAULT NULL,
+  `injury_until`   DATE         DEFAULT NULL,
+  `player_age`     TINYINT      DEFAULT NULL,  -- age at time of injury
   PRIMARY KEY (`injury_id`),
-  KEY `idx_injury_player_date` (`player_id`, `date_id`),
-  CONSTRAINT `fk_injury_player` FOREIGN KEY (`player_id`) REFERENCES `dim_player` (`player_id`),
-  CONSTRAINT `fk_injury_date`   FOREIGN KEY (`date_id`)   REFERENCES `dim_date`   (`date_id`)
+  KEY `idx_injury_player_club` (`player_club_id`),
+  CONSTRAINT `fk_injury_player_club`
+    FOREIGN KEY (`player_club_id`) REFERENCES `bridge_player_club` (`player_club_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 -- ---------------------------------------------------------------------------
--- Fact: LoadMetrics  (materialized summary, refreshed by script 52)
--- Holds the pre-computed acute/chronic loads and the IRS band.
+-- S3 | Fact: Player Profile  (University benchmark dataset)
+-- One row per anonymous player profile from data.csv.
+-- Used as a reference benchmark: injury risk by position and physical profile.
+-- Linked to dim_position for cross-source comparison with S2.
+-- ---------------------------------------------------------------------------
+CREATE TABLE `fact_player_profile` (
+  `profile_id`                 INT          NOT NULL AUTO_INCREMENT,
+  `position_id`                INT          DEFAULT NULL,  -- FK → dim_position
+  `age`                        TINYINT      DEFAULT NULL,
+  `height_cm`                  DECIMAL(5,2) DEFAULT NULL,
+  `weight_kg`                  DECIMAL(5,2) DEFAULT NULL,
+  `bmi`                        DECIMAL(5,2) DEFAULT NULL,
+  `training_hours_per_week`    DECIMAL(5,2) DEFAULT NULL,
+  `matches_played_past_season` SMALLINT     DEFAULT NULL,
+  `previous_injury_count`      SMALLINT     DEFAULT NULL,
+  `knee_strength_score`        DECIMAL(5,2) DEFAULT NULL,
+  `hamstring_flexibility`      DECIMAL(5,2) DEFAULT NULL,
+  `reaction_time_ms`           DECIMAL(7,2) DEFAULT NULL,
+  `balance_test_score`         DECIMAL(5,2) DEFAULT NULL,
+  `sprint_speed_10m_s`         DECIMAL(5,2) DEFAULT NULL,
+  `agility_score`              DECIMAL(5,2) DEFAULT NULL,
+  `sleep_hours_per_night`      DECIMAL(4,2) DEFAULT NULL,
+  `stress_level_score`         DECIMAL(5,2) DEFAULT NULL,
+  `nutrition_quality_score`    DECIMAL(5,2) DEFAULT NULL,
+  `warmup_routine_adherence`   TINYINT(1)   DEFAULT NULL,
+  `injury_next_season`         TINYINT(1)   DEFAULT NULL,  -- 0 = no, 1 = yes
+  PRIMARY KEY (`profile_id`),
+  KEY `idx_profile_position` (`position_id`),
+  CONSTRAINT `fk_profile_position`
+    FOREIGN KEY (`position_id`) REFERENCES `dim_position` (`position_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- ---------------------------------------------------------------------------
+-- Derived | Fact: Load Metrics  (session-based IRS)
+-- Computed from fact_session via INSERT...SELECT (ELT step 52).
+-- Acute load  = AVG(training_load) over last 7 sessions per athlete
+-- Chronic load = AVG(training_load) over last 28 sessions per athlete
+-- IRS = acute_load_7s / chronic_load_28s
+-- Decision rule: IRS >= 1.5 → high risk | 0.8–1.5 → optimal | < 0.8 → under
 -- ---------------------------------------------------------------------------
 CREATE TABLE `fact_load_metrics` (
-  `load_metrics_id` INT           NOT NULL AUTO_INCREMENT,
-  `player_id`       INT           NOT NULL,
-  `date_id`         INT           NOT NULL,
-  `daily_load`      DECIMAL(10,2) DEFAULT NULL,
-  `acute_load_7d`   DECIMAL(10,2) DEFAULT NULL,
-  `chronic_load_28d` DECIMAL(10,2) DEFAULT NULL,
-  `irs`             DECIMAL(6,3)  DEFAULT NULL,
-  `risk_band`       VARCHAR(16)   DEFAULT NULL,  -- high | optimal | under
+  `load_metrics_id`  INT           NOT NULL AUTO_INCREMENT,
+  `athlete_id`       INT           NOT NULL,  -- FK → dim_athlete
+  `session_id`       INT           NOT NULL,  -- FK → fact_session (reference session)
+  `session_seq`      INT           NOT NULL,  -- ordinal session number within athlete
+  `acute_load_7s`    DECIMAL(10,2) DEFAULT NULL,
+  `chronic_load_28s` DECIMAL(10,2) DEFAULT NULL,
+  `irs`              DECIMAL(6,3)  DEFAULT NULL,
+  `risk_band`        VARCHAR(16)   DEFAULT NULL,  -- high | optimal | under
   PRIMARY KEY (`load_metrics_id`),
-  UNIQUE KEY `uq_load_player_date` (`player_id`, `date_id`),
-  KEY `idx_load_date` (`date_id`),
-  CONSTRAINT `fk_load_player` FOREIGN KEY (`player_id`) REFERENCES `dim_player` (`player_id`),
-  CONSTRAINT `fk_load_date`   FOREIGN KEY (`date_id`)   REFERENCES `dim_date`   (`date_id`)
+  UNIQUE KEY `uq_load_athlete_session` (`athlete_id`, `session_id`),
+  KEY `idx_load_session` (`session_id`),
+  CONSTRAINT `fk_load_athlete`
+    FOREIGN KEY (`athlete_id`) REFERENCES `dim_athlete`  (`athlete_id`),
+  CONSTRAINT `fk_load_session`
+    FOREIGN KEY (`session_id`) REFERENCES `fact_session` (`session_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 SET FOREIGN_KEY_CHECKS = 1;
