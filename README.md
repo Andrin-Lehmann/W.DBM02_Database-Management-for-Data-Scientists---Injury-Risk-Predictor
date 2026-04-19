@@ -1,14 +1,14 @@
 # Injury Risk Predictor
 
-**Module:** Database Management for Data Scientists (DBM) — HSLU, MSc Applied Information and Data Science
-**Stack:** MySQL 8 · Metabase · Quarto (PDF report)
+**Module:** Database Management for Data Scientists (DBM) — HSLU, MSc Applied Information and Data Science  
+**Stack:** MySQL 8 · Metabase · Quarto (PDF report)  
 **Team:** TBD
 
 ---
 
 ## 1 · Use case in one sentence
 
-A football coach uses an interactive dashboard to identify players whose **Injury Risk Score (IRS)** — the acute-to-chronic workload ratio — is in the danger zone, so training load can be reduced before an injury occurs.
+A football coach uses an interactive dashboard to identify workload risk patterns and injury benchmarks so that training load can be adjusted before injury risk becomes critical.
 
 ## 2 · Decision rule
 
@@ -24,15 +24,15 @@ Thresholds follow Gabbett's acute:chronic workload ratio framework (British Jour
 
 | # | Dataset | Role in schema | Granularity |
 |---|---|---|---|
-| A | Multimodal Sports Injury Dataset | Workload & biomechanical time series | Session × player |
-| B | European Football Injuries 2020–2025 | Injury events across leagues | Injury incident |
-| C | University Football Injury Prediction Dataset (~800 players) | Player features + injury labels | Player (static) |
+| A | Multimodal Sports Injury Dataset | Workload, session metrics, IRS calculation | Session × athlete |
+| B | European Football Injuries 2020–2025 | Football player, team, and injury-event layer | Injury event |
+| C | University Football Injury Prediction Dataset (~800 players) | Static benchmark and profile layer | Player (static) |
 
-Datasets are independent in form (time-series vs. event log vs. tabular features) and content (load telemetry vs. league injury records vs. anthropometric profiles). The join key strategy is documented in `docs/data_integration.md`.
+The datasets are independent in form and content. Because they do not share a universal player ID, the project uses a hybrid integration strategy: source-specific player/athlete layers plus shared benchmark dimensions such as age group and position group. Details are documented in `docs/data_integration.md`.
 
 ## 4 · Repository layout
 
-```
+```text
 injury-risk-predictor/
 ├── README.md                          ← this file
 ├── injury_risk_report.qmd             ← main Quarto report (the deliverable)
@@ -49,31 +49,32 @@ injury-risk-predictor/
 │
 ├── sql/
 │   ├── 01_schema/
-│   │   └── 01_create_tables.sql       ← DDL: all CREATE TABLE statements, 3NF
-│   ├── 02_load/                       ← LOAD DATA INFILE into staging tables
+│   │   └── 01_create_tables.sql
+│   ├── 02_load/
 │   │   ├── 10_load_staging_multimodal.sql
 │   │   ├── 11_load_staging_european.sql
 │   │   └── 12_load_staging_university.sql
-│   ├── 03_transform/                  ← ELT: INSERT ... SELECT into target schema
+│   ├── 03_transform/
 │   │   ├── 20_insert_dim_team.sql
-│   │   ├── 21_insert_dim_position.sql
-│   │   ├── 22_insert_dim_player.sql
+│   │   ├── 21_insert_dim_position_group.sql
+│   │   ├── 22_insert_dim_player_european.sql
 │   │   ├── 23_insert_dim_date.sql
-│   │   ├── 24_insert_fact_training_session.sql
-│   │   ├── 25_insert_fact_match.sql
-│   │   ├── 26_insert_fact_injury.sql
-│   │   └── 27_insert_fact_load_metrics.sql
+│   │   ├── 24_insert_dim_athlete_multimodal.sql
+│   │   ├── 25_insert_fact_training_session.sql
+│   │   ├── 26_insert_fact_injury_european.sql
+│   │   ├── 27_insert_fact_load_metrics.sql
+│   │   └── 28_insert_fact_university_benchmark.sql
 │   ├── 04_analytics/
-│   │   ├── 40_irs_rolling_window.sql  ← the main KPI query (window fn + CTE)
-│   │   ├── 41_irs_decision_bands.sql  ← CASE WHEN mapping to risk bands
-│   │   └── 42_injury_rate_by_band.sql ← validation query
+│   │   ├── 40_irs_rolling_window.sql
+│   │   ├── 41_irs_decision_bands.sql
+│   │   └── 42_injury_rate_by_band.sql
 │   └── 05_optimization/
-│       ├── 50_baseline_explain.sql    ← EXPLAIN ANALYZE before indexing
-│       ├── 51_create_indexes.sql      ← B-tree indexes on (player_id, date)
-│       ├── 52_materialized_irs.sql    ← precomputed IRS summary table
-│       └── 53_explain_after.sql       ← EXPLAIN ANALYZE after optimization
+│       ├── 50_baseline_explain.sql
+│       ├── 51_create_indexes.sql
+│       ├── 52_materialized_irs.sql
+│       └── 53_explain_after.sql
 │
-├── Pictures/                          ← screenshots referenced in the .qmd
+├── Pictures/
 │   ├── er_diagram.png
 │   ├── schema_ddl.png
 │   ├── execution_plan_before.png
@@ -82,27 +83,27 @@ injury-risk-predictor/
 │   └── metabase_risk_ranking.png
 │
 ├── metabase/
-│   ├── dashboard_export.json          ← serialized dashboard for reproducibility
-│   └── connection_setup.md            ← how to connect Metabase to MySQL
+│   ├── dashboard_export.json
+│   └── connection_setup.md
 │
 ├── scripts/
-│   ├── preprocess_multimodal.py       ← minimal preprocessing (encoding, column naming)
+│   ├── preprocess_multimodal.py
 │   ├── preprocess_european.py
 │   └── preprocess_university.py
 │
 └── docs/
-    ├── data_integration.md            ← how the 3 datasets are joined
-    ├── setup_mysql.md                 ← VM + MySQL install notes
-    └── setup_metabase.md              ← Metabase install + datasource config
-```
+    ├── data_integration.md
+    ├── setup_mysql.md
+    └── setup_metabase.md
+````
 
 ## 5 · How to reproduce
 
 1. **Install MySQL 8** on the HSLU Lab Services VM (see `docs/setup_mysql.md`).
-2. **Place raw data** in `data/raw/` (Kaggle download URLs in `docs/data_integration.md`).
+2. **Place raw data** in `data/raw/` (download references in `docs/data_integration.md`).
 3. **Run preprocessing**: `python scripts/preprocess_*.py` → writes cleaned CSVs to `data/processed/`.
 4. **Execute SQL scripts in order**: `01_schema` → `02_load` → `03_transform` → `04_analytics` → `05_optimization`.
-5. **Start Metabase**, connect to MySQL, import `metabase/dashboard_export.json`.
+5. **Start Metabase**, connect to MySQL, and import `metabase/dashboard_export.json`.
 6. **Render the report**: `quarto render injury_risk_report.qmd`.
 
 ## 6 · Submission access (to be filled before ILIAS deadline)
