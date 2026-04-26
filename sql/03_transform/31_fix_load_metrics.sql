@@ -1,10 +1,6 @@
--- 52_materialized_irs.sql
--- MySQL 8 has no native materialized views. fact_load_metrics acts as one:
--- TRUNCATE + reload via INSERT...SELECT. In production, schedule nightly via EVENT.
-
 USE injury_risk_predictor;
 
-TRUNCATE TABLE fact_load_metrics;
+ALTER TABLE fact_load_metrics MODIFY risk_band VARCHAR(20) DEFAULT NULL;
 
 INSERT INTO fact_load_metrics
     (mm_athlete_id, date_id, session_load, acute_load_7, chronic_load_28, irs, risk_band)
@@ -42,4 +38,4 @@ FROM (
     JOIN dim_date d ON d.date_id = ts.date_id
 ) x;
 
-SELECT risk_band, COUNT(*) AS cnt FROM fact_load_metrics GROUP BY risk_band;
+SELECT risk_band, COUNT(*) AS cnt FROM fact_load_metrics GROUP BY risk_band ORDER BY cnt DESC;
