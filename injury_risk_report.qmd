@@ -26,17 +26,17 @@ editor_options:
 
 {\Huge Injury Risk Predictor Dashboard \par}
 \vspace{0.8cm}
-{\Large HSLU -- Module DBM Project Report -- Group TBD \par}
+{\Large HSLU -- Module DBM Project Report \par}
 
 \vspace{3cm}
 
 Andrin Lehmann (andrin.lehmann@stud.hslu.ch)\\
 \vspace{0.2cm}
-Teammate 2 (tbd@stud.hslu.ch) \\
+Maurice Salzmann (maurice.salzmann@stud.hslu.ch) \\
 \vspace{0.2cm}
-Teammate 3 (tbd@stud.hslu.ch) \\
+Alina Caspar (alina.caspar@stud.hslu.ch) \\
 \vspace{0.2cm}
-Teammate 4 (tbd@stud.hslu.ch)
+Aurora Rigo (aurora.rigo@stud.hslu.ch)
 
 \vfill
 \today
@@ -61,44 +61,44 @@ Following the OECD Data Value Cycle from the lecture, raw data is transformed in
 
 # Project Idea & Use Case {#sec-ProjectIdea}
 
-Our *Injury Risk Predictor Dashboard* project aims to support data-driven load management decisions by combining workload telemetry, injury event history, and static player features. A football coach or sports scientist faces the challenge of *deciding which players to rest or whose training load to reduce* during the weekly microcycle. Our database and our dashboard create value by enabling coaches to identify players whose current workload profile places them at elevated injury risk, based on quantitative and objective metrics. For this purpose we integrate three complementary data perspectives:
+Our *Injury Risk Predictor Dashboard* project aims to support data-driven load management decisions by combining workload telemetry, injury event history, and static player features. A football coach or sports scientist faces the challenge of *deciding which players to rest or whose training load to reduce* during the weekly microcycle. Our database and dashboard create value by enabling coaches to identify players whose current workload profile places them at elevated injury risk, based on quantitative and objective metrics. For this purpose we integrate three complementary data perspectives:
 
-1.  **Workload telemetry**: daily session load, distance covered, high-speed running, accelerations
+1.  **Workload telemetry**: daily session load, training intensity, duration, fatigue index
 2.  **Injury event history**: recorded injuries with type, severity, absence duration
-3.  **Player features**: static attributes — age, position, height, weight, prior injury history
+3.  **Player features**: static attributes — age, position, sport type, prior injury history
 
 ## Data Sources
 
-To keep the project focused on the core learning objectives of this module we deliberately rely on publicly available datasets from Kaggle and sports-science research repositories. These datasets are well-structured and widely cited in the injury-prediction literature. For the purpose of this project as a proof of concept, they are suitable, but for any production-level application, live data from a club's wearable provider (Catapult, STATSports) would need to be integrated.
+To keep the project focused on the core learning objectives of this module we deliberately rely on publicly available datasets from Kaggle and sports-science research repositories. These datasets are well-structured and widely cited in the injury-prediction literature. For the purpose of this project as a proof of concept they are suitable, but for any production-level application, live data from a club's wearable provider (Catapult, STATSports) would need to be integrated.
 
-**Multimodal Sports Injury Dataset**
-
--   Source: Kaggle / sports-science research repository
--   Type: `.csv`
--   Content: Daily workload metrics — session RPE, total distance (m), high-speed running distance (m), accelerations, decelerations, heart-rate zones, perceived fatigue
--   Purpose: Provides the time-series workload signal needed to compute rolling acute and chronic loads
-
-**European Football Injuries Dataset (2020–2025)**
+**Multimodal Sports Injury Dataset (S1)**
 
 -   Source: Kaggle
--   Type: `.csv`
--   Content: Injury records across major European leagues — player name, club, injury type, body region, date of injury, absence duration, match or training context
--   Purpose: Provides the ground-truth injury event labels and league-level benchmarking context
+-   Type: `.csv`, 15,420 rows
+-   Content: One row per training session per anonymous athlete. Fields include `athlete_id`, `session_id`, `training_load`, `training_intensity`, `training_duration`, `fatigue_index`, `injury_occurred`, plus biometric and environmental sensors (heart rate, BMI, humidity, etc.)
+-   Purpose: Provides the time-series workload signal to compute rolling acute and chronic loads
 
-**University Football Injury Prediction Dataset**
+**European Football Injuries Dataset (S2)**
 
 -   Source: Kaggle
--   Type: `.csv`
--   Content: ~800 players with static features (age, height, weight, position, prior injuries) and binary injury-within-season label
--   Purpose: Provides the player master data and a validation label for the risk model
+-   Type: `.csv`, 15,603 rows
+-   Content: Injury records from major European leagues across five seasons (2020/21 – 2024/25). Fields include `player_name`, `club`, `league`, `season`, `player_position`, `player_age`, `injury`, `days`, `games_missed`, `injury_from_parsed`
+-   Purpose: Named players with real injury dates and club affiliations, enabling M:N player–team modelling and league-level injury rate benchmarks
 
-The three datasets are linked via a composite strategy: the University dataset serves as the canonical *player universe*, the Multimodal dataset supplies the workload time-series per player, and the European dataset provides league-level injury frequency benchmarks joined at the position and age-group level. See @sec-DatabaseModel for the integration logic.
+**University Football Injury Prediction Dataset (S3)**
+
+-   Source: Kaggle
+-   Type: `.csv`, 800 rows
+-   Content: Anonymous player profiles with static biomechanical attributes — `age`, `height_cm`, `weight_kg`, `position`, `training_hours_per_week`, `previous_injury_count`, `injury_next_season` (binary label), and several fitness test scores
+-   Purpose: Benchmark reference for prior injury count multiplier in the adjusted IRS
+
+The three datasets are linked via a composite strategy: the multimodal dataset supplies the workload time-series per athlete, the European dataset provides named player and injury event data, and the university dataset contributes a static benchmark multiplier. All three are connected at aggregate level through the conformed dimensions `dim_age_group` and `dim_position_group`. See @sec-DatabaseModel for the integration logic.
 
 ## Key Figures
 
 ### Acute:Chronic Workload Ratio (ACWR / IRS)
 
-The core key figure is the **Acute-to-Chronic Workload Ratio**, which we label *Injury Risk Score (IRS)*. For each player $i$ on each day $t$, let $L_{i,t}$ denote the daily workload (e.g. session RPE × duration, or total distance). The acute load is the average workload over the past 7 days; the chronic load is the average over the past 28 days:
+The core key figure is the **Acute-to-Chronic Workload Ratio**, which we label *Injury Risk Score (IRS)*. For each athlete $i$ on each session-day $t$, let $L_{i,t}$ denote the daily training load. The acute load is the rolling 7-session average; the chronic load is the rolling 28-session average:
 
 $$
 \text{AcuteLoad}_{i,t} = \frac{1}{7} \sum_{s=t-6}^{t} L_{i,s}
@@ -112,249 +112,425 @@ $$
 \text{IRS}_{i,t} = \frac{\text{AcuteLoad}_{i,t}}{\text{ChronicLoad}_{i,t}}
 $$ {#eq-irs}
 
-An IRS value substantially above 1 indicates the player is currently accumulating load faster than their long-term conditioning supports — the "sweet spot" violation associated with elevated injury risk in the literature.
+An IRS substantially above 1 indicates the athlete is accumulating load faster than their long-term conditioning supports — the "sweet spot" violation associated with elevated injury risk in the literature. Because the multimodal dataset contains no real calendar dates, session order (derived from `session_id`) is used as the time axis; a synthetic date starting 2024-01-01 is assigned per athlete for `dim_date` compatibility.
 
-### Injury Rate Validation Metric
+### Adjusted IRS
 
-To validate that the IRS bands meaningfully separate risk, we compute the observed injury rate per IRS band across the European injuries dataset. For each band $b \in \{\text{high}, \text{optimal}, \text{under}\}$:
+To enrich the raw IRS with cross-source context, we compute an **Adjusted IRS** by multiplying two factors derived from the other two datasets:
 
 $$
-\text{InjuryRate}_b = \frac{\text{InjuryEvents}_b}{\text{PlayerDays}_b}
-$$ {#eq-injury-rate}
+\text{AdjustedIRS}_{i,t} = \text{IRS}_{i,t} \times \text{prior\_injury\_multiplier} \times \text{position\_age\_factor}
+$$
 
-A well-calibrated model shows a higher injury rate in the "high" band than in the "optimal" band.
+-   **prior\_injury\_multiplier** (S3): $1.0 + 0.3 \times \text{avg\_previous\_injury\_count}$ per age group — captures historical injury burden (Fuller et al., 2006)
+-   **position\_age\_factor** (S2): ratio of age-group injury rate to overall average injury rate from the European dataset — captures positional and age-related risk exposure (Ekstrand et al., UEFA Injury Studies)
+
+Both factors are joined at `age_group_id` level — the finest grain at which all three sources can be compared without a shared player identifier.
 
 ## Decision Rule
 
-Based on the IRS, the coach applies the following decision rule for each player:
+Based on the Adjusted IRS, the coach applies the following four-band decision rule:
 
-| IRS band | Range | Action |
-|----------|-------|--------|
-| High risk | IRS ≥ 1.5 | Reduce load / rest |
-| Optimal | 0.8 ≤ IRS < 1.5 | Maintain plan |
-| Undertraining | IRS < 0.8 | Progressively increase load |
+| Adjusted IRS | Risk Band | Action |
+|---|---|---|
+| ≥ 2.0 | High Risk | Reduce load immediately |
+| 1.2 – 2.0 | Caution | Monitor closely, reduce slightly |
+| 0.8 – 1.2 | Optimal | Maintain current load |
+| < 0.8 | Underloaded | Consider increasing load |
 
-These thresholds follow Gabbett (2016) and subsequent validations in professional football cohorts.
+Thresholds follow Gabbett (2016) for the base IRS; the upper band of the adjusted score is raised to 2.0 because the multipliers inflate values above the raw IRS range. In our loaded dataset, the adjusted IRS distribution across 11,208 athletes with a full 28-session history is: Caution 4,103 · Optimal 2,304 · High Risk 99 · Underloaded 113.
 
 # Data Model & Database Schema {#sec-DatabaseModel}
 
 ## Source Data Analysis
 
-### Multimodal Sports Injury Dataset
+### Multimodal Sports Injury Dataset (S1)
 
-*[Describe columns, example rows, data types. Add screenshot from head() in a Python chunk.]*
+The dataset contains 15,420 rows across 156 distinct athletes, each with 29 columns. Key columns used in the project:
 
-### European Football Injuries Dataset
+| Column | Type in source | Notes |
+|---|---|---|
+| `athlete_id` | integer | local athlete identifier; no names |
+| `session_id` | integer | ordered within athlete; used as time proxy |
+| `training_load` | float | primary workload metric for IRS |
+| `training_intensity` | categorical | Low / Medium / High |
+| `training_duration` | float | session length in minutes |
+| `fatigue_index` | float | self-reported fatigue score |
+| `injury_occurred` | binary (0/1) | whether injury was recorded in this session |
+| `age`, `gender`, `sport_type`, `bmi` | mixed | athlete demographics |
 
-*[Describe columns, example rows, data types.]*
+The dataset has no real calendar dates. Session ordering within each athlete is used to assign synthetic dates starting 2024-01-01 (one day per session). Athletes range from age 16 to 34 (age groups 16–20: 33, 21–24: 59, 25–29: 52, 30–34: 12).
 
-### University Football Injury Prediction Dataset
+### European Football Injuries Dataset (S2)
 
-*[Describe columns, example rows, data types.]*
+The dataset contains 15,603 injury records from 145 clubs across five seasons (2020/21 – 2024/25). Key columns:
+
+| Column | Type in source | Notes |
+|---|---|---|
+| `player_name` | string | used as natural key for `dim_player_european` |
+| `club`, `league` | string | club identifier; with season forms M:N bridge key |
+| `season` | string | e.g. `20/21` |
+| `player_position` | string | granular position (e.g. Centre-Back, Left Winger) |
+| `player_age` | integer | age at time of injury |
+| `injury` | string | injury label (e.g. Hamstring injury, Muscle injury) |
+| `days` | string | days absent (some values contain text, cleaned with REGEXP) |
+| `games_missed` | integer | matches missed |
+| `injury_from_parsed` | string | injury start date, M/D/YYYY format |
+
+Top injury types: Hamstring injury (1,256), Corona virus (986), Muscle injury (960), muscular problems (940), Knee injury (584). Season distribution is balanced: 2020/21 – 1,750 bridge entries, up to 2024/25 – 1,802.
+
+### University Football Injury Prediction Dataset (S3)
+
+The dataset contains 800 anonymous player profiles with 19 columns. No player names, team names, or dates are available. Key columns used:
+
+| Column | Type in source | Notes |
+|---|---|---|
+| `age` | integer | used to assign `age_group_id` |
+| `position` | string | Goalkeeper / Defender / Midfielder / Forward |
+| `previous_injury_count` | integer | drives the prior injury multiplier |
+| `training_hours_per_week` | float | stored for benchmarking |
+| `injury_next_season` | binary (0/1) | outcome label |
+| `bmi` | float | stored for benchmarking |
+
+Because no linking identifier exists to S1 or S2, this source is used exclusively as a benchmark aggregate: average `previous_injury_count` per age group is the sole input to the multiplier.
 
 ### Deriving the Conceptual Model from Source Data
 
-*[Walk through how entities were identified across the three sources, where they overlap, where they diverge, and how the integration key was chosen.]*
+Three integration constraints shaped the model:
+
+1. S1 has no player names or real dates — it can only supply a workload time-series per anonymous athlete
+2. S2 has named players with club affiliations that change across seasons — this is the only source that requires a M:N player–team bridge
+3. S3 has no identifiers whatsoever — it feeds only as an aggregate benchmark
+
+Because no universal player identifier exists across sources, the model uses **conformed dimensions** (`dim_age_group`, `dim_position_group`) as the sole cross-source join keys. All player-level analysis stays source-specific; cross-source comparisons are made at age-group and position-group granularity only.
 
 ## Conceptual Model
 
-*[Insert ER diagram here: entities = Player, Team, Position, TrainingSession, Match, Injury, LoadMetrics, DateDim. Highlight the M:N relationship — Player↔Match via Appearance, and Player↔Injury (a player can have many injuries, and an injury record may span body regions).]*
+The schema separates into three source-specific subject areas connected by two shared conformed dimensions.
 
-Entities:
+**Entities:**
 
-- **Player** — player master from University dataset, enriched where names match the European injuries file
-- **Team** — club / national team / university team
-- **Position** — GK, DEF, MID, FWD with sub-categories
-- **TrainingSession** — dated session per player with workload attributes
-- **Match** — dated match per team; Player↔Match is M:N via an Appearance bridge
-- **Injury** — dated injury event with body region, type, absence duration
-- **LoadMetrics** — per-player, per-date derived acute/chronic load table (materialized)
-- **DateDim** — calendar dimension
+- `dim_athlete_multimodal` — anonymous athlete from S1; local `source_id` maps back to the CSV `athlete_id`
+- `dim_player_european` — named football player from S2; one row per distinct player name
+- `dim_team` — football club from S2
+- `bridge_player_team` — M:N bridge between player and team; one row per player × club × season combination. A player who transferred clubs appears in multiple rows
+- `dim_age_group` — conformed dimension shared by all three sources (bands: 16–20, 21–24, 25–29, 30–34, 35–39, 40+)
+- `dim_position_group` — conformed dimension shared by S2 and S3 (GK, DEF, MID, FWD)
+- `dim_date` — calendar dimension populated with both synthetic S1 dates and real S2 injury dates
+- `fact_training_session` — one row per S1 session; workload attributes per athlete per day
+- `fact_load_metrics` — derived rolling ACWR table; one row per S1 session-day with IRS and risk band
+- `fact_injury_european` — one row per S2 injury event; linked to bridge_player_team
+- `fact_university_benchmark` — one row per S3 player profile; benchmark reference only
 
-Relationships:
+**Key relationships:**
 
-- Player → Team (N:1)
-- Player → Position (N:1)
-- Player → TrainingSession (1:N)
-- Player ↔ Match (M:N, via Appearance)
-- Player → Injury (1:N)
-- TrainingSession → DateDim (N:1)
+- `dim_player_european` ↔ `dim_team` (M:N via `bridge_player_team`)
+- `dim_athlete_multimodal` → `fact_training_session` (1:N)
+- `dim_athlete_multimodal` → `fact_load_metrics` (1:N)
+- `bridge_player_team` → `fact_injury_european` (1:N)
+- All three player/athlete dims → `dim_age_group` (N:1)
 
-## Physical database schema in DDL
+*[Insert ERD screenshot from DBeaver here]*
 
-See `sql/01_schema/01_create_tables.sql` for the full DDL.
+## Physical Database Schema in DDL
 
-### Key Structural Elements
+The full DDL is in `sql/01_schema/01_create_tables.sql`. Key design decisions:
 
-#### Primary Keys
+### Primary Keys
 
-*[All entities use surrogate `INT AUTO_INCREMENT` primary keys to decouple from source-data natural keys that may contain encoding inconsistencies.]*
+All entities use surrogate `INT AUTO_INCREMENT` primary keys. This decouples the schema from source-data natural keys (player names, athlete IDs) that may contain encoding inconsistencies or change across seasons. The original source identifier is preserved as a separate `source_id` column in `dim_athlete_multimodal`.
 
-#### Foreign Keys
+### Foreign Keys
 
-*[Enforced at the InnoDB engine level to guarantee referential integrity during ELT.]*
+All foreign key constraints are enforced at the InnoDB engine level. `FOREIGN_KEY_CHECKS` is disabled during DDL creation and re-enabled after, which allows forward-references in the CREATE TABLE sequence without ordering constraints.
 
-#### Data Type Rationale
+### Data Types
 
-*[DECIMAL for workload metrics, DATE for session/match/injury dates, VARCHAR sized to observed maxima plus buffer.]*
+`DECIMAL` is used for all workload metrics (`training_load`, `acute_load_7`, `chronic_load_28`, `irs`) to avoid floating-point rounding in aggregates. `DATE` is used for `dim_date.full_date`. `VARCHAR` is sized to observed maxima with a small buffer; `TINYINT` is used for age fields.
 
-#### Index Strategy
+### Index Strategy
 
-*[Discussed in depth in @sec-Efficiency.]*
-
-### Schema Alignment with Conceptual Model
-
-*[Map each ER entity/relationship to its DDL realization.]*
+Covered in depth in @sec-Efficiency. Composite indexes on `(mm_athlete_id, date_id)` are the primary optimization target since the rolling window functions partition on athlete and order by date.
 
 ### Third Normal Form Rationale
 
-*[Show that no non-key attribute is transitively dependent on a non-key attribute. Position-specific benchmarks live in a Position table, team info in a Team table, so player rows carry only FKs.]*
+The schema is in 3NF: every non-key attribute depends on the whole primary key and on nothing but the primary key.
+
+- League and country information belong to `dim_team`, not to `dim_player_european`, so no player row carries a transitive team attribute
+- Age group label and band boundaries belong to `dim_age_group`, not duplicated in player or fact rows
+- Position name belongs to `dim_position_group`; fact rows carry only the FK
+- `fact_load_metrics` stores derived values (IRS, risk band) that depend functionally on the window calculation result for a given `(mm_athlete_id, date_id)` — these are computed attributes of the derived fact, not duplicates of base data
 
 # Loading & Transforming the Data {#sec-LoadingData}
 
 ## Loading Logic
 
-Following the ELT principle, each of the three source CSVs is first loaded unchanged into a staging table using `LOAD DATA LOCAL INFILE`. All transformations — key generation, deduplication, player-name fuzzy matching between the European and University datasets, derivation of rolling workloads — are performed inside MySQL via `INSERT ... SELECT` statements.
+Following the ELT principle, each of the three source CSVs is first loaded unchanged into an all-TEXT staging table using `LOAD DATA LOCAL INFILE`. No type enforcement or business logic is applied at load time. All transformations — type casting, NaN handling, key generation, position mapping, rolling load computation — are performed inside MySQL via `INSERT ... SELECT` statements in `sql/03_transform/30_transform_dims_facts.sql`.
 
-## Rationale for This Approach
+## Rationale for ELT over ETL
 
-*[Why ELT over ETL: reproducibility, server-side performance, keeps the Python layer thin.]*
+Loading raw text first and transforming inside the database keeps the pipeline reproducible: re-running the transform script on the same staging data produces identical results without re-ingesting the CSVs. It also leverages MySQL's window functions and set-based operations, which outperform row-by-row Python iteration for the rolling ACWR calculation on 15,000+ rows.
 
 ## Dataset Integration Logic
 
-*[Join key strategy — how the three datasets are bridged. Explicit about what is matched exactly vs. what is joined at a coarser grain (position × age-group benchmarks).]*
+Because no universal player identifier exists across the three sources, integration uses two strategies:
 
-## SQL Snippet — Loading Player Master
+1. **Source-specific subject areas**: each source populates its own dimension and fact tables. IRS is computed from S1 only; injury events come from S2 only; benchmark aggregates come from S3 only.
+2. **Conformed dimension join**: cross-source comparisons (the adjusted IRS) are made by joining `dim_age_group` across all three source-specific tables. The `position_age_factor` from S2 and the `prior_injury_multiplier` from S3 are joined to S1 IRS rows via `age_group_id`.
 
-*[Show the INSERT INTO dim_player SELECT DISTINCT ... block here.]*
+A known consequence: athletes in `dim_athlete_multimodal` (S1) and players in `dim_player_european` (S2) are different populations that cannot be row-level matched. The adjusted IRS applies age-group-level context from S2 and S3 to individual S1 athletes — this is disclosed as a benchmark comparison, not an individual-level linkage.
 
-## SQL Snippet — Loading Load Metrics
+## Key Staging Data Quality Steps
 
-*[Show the INSERT INTO fact_load_metrics SELECT ... with the rolling window.]*
+The multimodal dataset required several cleaning steps applied in the temporary table `tmp_multimodal_prepared`:
+
+- **NaN strings**: MySQL does not natively handle Python's `NaN` export; values matching `'nan'` (case-insensitive) are replaced with `NULL` via `CASE WHEN LOWER(TRIM(...)) = 'nan'`
+- **Synthetic dates**: since no real dates exist, `ROW_NUMBER() OVER (PARTITION BY athlete_id ORDER BY session_id)` is used to rank sessions per athlete; the rank is added as an interval to 2024-01-01
+- **Binary injury flag**: `injury_occurred` values > 0 are mapped to 1; NULL or empty to 0
+
+The European dataset required:
+
+- **Position mapping**: 15 granular position labels collapsed to GK / DEF / MID / FWD via CASE WHEN
+- **Days cleaning**: `REGEXP_REPLACE(days, '[^0-9]', '')` strips non-numeric text from the absence duration field
+- **Date parsing**: `STR_TO_DATE(injury_from_parsed, '%c/%e/%Y')` parses US-format M/D/YYYY dates
+
+## SQL Snippet — Loading the European Player Dimension
+
+```sql
+INSERT IGNORE INTO dim_player_european (player_name, position_group_id, age_group_id)
+SELECT DISTINCT
+    TRIM(e.player_name),
+    pg.position_group_id,
+    ag.age_group_id
+FROM stg_european_injuries e
+JOIN dim_position_group pg ON pg.position_group_code =
+    CASE
+        WHEN e.player_position = 'Goalkeeper'  THEN 'GK'
+        WHEN e.player_position IN ('Centre-Back','Left-Back','Right-Back') THEN 'DEF'
+        WHEN e.player_position IN ('Defensive Midfield','Central Midfield',
+             'Attacking Midfield','Left Midfield','Right Midfield','Midfielder') THEN 'MID'
+        WHEN e.player_position IN ('Left Winger','Right Winger',
+             'Second Striker','Forward') THEN 'FWD'
+        ELSE 'MID'
+    END
+JOIN dim_age_group ag
+    ON CAST(e.player_age AS UNSIGNED) BETWEEN ag.min_age AND ag.max_age
+WHERE e.player_name IS NOT NULL AND TRIM(e.player_name) <> '';
+```
+
+`INSERT IGNORE` respects the `UNIQUE KEY uq_eu_player_name` — the same player appearing in multiple injury records is inserted only once.
+
+## SQL Snippet — Rolling ACWR in fact_load_metrics
+
+```sql
+INSERT INTO fact_load_metrics
+    (mm_athlete_id, date_id, session_load, acute_load_7, chronic_load_28, irs, risk_band)
+SELECT
+    x.mm_athlete_id, x.date_id, x.session_load,
+    x.acute_load_7, x.chronic_load_28,
+    CASE WHEN x.chronic_n = 28 AND x.chronic_load_28 > 0
+         THEN x.acute_load_7 / x.chronic_load_28 ELSE NULL END,
+    CASE
+        WHEN x.chronic_n < 28                               THEN 'Not enough history'
+        WHEN x.acute_load_7 / x.chronic_load_28 >= 2.0     THEN 'High Risk'
+        WHEN x.acute_load_7 / x.chronic_load_28 >= 1.2     THEN 'Caution'
+        WHEN x.acute_load_7 / x.chronic_load_28 >= 0.8     THEN 'Optimal'
+        ELSE 'Underloaded'
+    END
+FROM (
+    SELECT
+        ts.mm_athlete_id, ts.date_id,
+        ts.training_load AS session_load,
+        AVG(ts.training_load) OVER (
+            PARTITION BY ts.mm_athlete_id ORDER BY d.full_date
+            ROWS BETWEEN 6 PRECEDING AND CURRENT ROW
+        ) AS acute_load_7,
+        AVG(ts.training_load) OVER (
+            PARTITION BY ts.mm_athlete_id ORDER BY d.full_date
+            ROWS BETWEEN 27 PRECEDING AND CURRENT ROW
+        ) AS chronic_load_28,
+        COUNT(ts.training_load) OVER (
+            PARTITION BY ts.mm_athlete_id ORDER BY d.full_date
+            ROWS BETWEEN 27 PRECEDING AND CURRENT ROW
+        ) AS chronic_n
+    FROM fact_training_session ts
+    JOIN dim_date d ON d.date_id = ts.date_id
+) x;
+```
+
+The `chronic_n` counter tracks how many rows are in the 28-session window. IRS is set to NULL until the window is fully populated, producing a clean "Not enough history" band for the first 27 sessions of each athlete. This results in exactly 4,212 null-IRS rows — 156 athletes × 27 warm-up sessions.
+
+## Loaded Row Counts
+
+After running the full ELT pipeline:
+
+| Table | Rows |
+|---|---|
+| `stg_european_injuries` | 15,603 |
+| `stg_multimodal_sessions` | 15,420 |
+| `stg_university_benchmark` | 800 |
+| `dim_team` | 145 |
+| `dim_player_european` | 4,080 |
+| `bridge_player_team` | 8,645 |
+| `dim_athlete_multimodal` | 156 |
+| `fact_university_benchmark` | 800 |
+| `fact_injury_european` | 15,603 |
+| `fact_training_session` | 15,420 |
+| `fact_load_metrics` | 15,420 |
 
 # Analyzing & Evaluating Data {#sec-analyzing-evaluating-data}
 
 ## The IRS Query
 
-The main analytical query computes, for each player and date, the acute load, chronic load, and IRS, then classifies each row into a risk band. The query uses:
+The main analytical query in `sql/04_analytics/40_irs_rolling_window.sql` computes, for each athlete and session-day, the acute load, chronic load, IRS, and risk band. It uses the following SQL constructs:
 
-1. **CTE** — define daily aggregated load
-2. **JOIN** (3×) — player, position, team
-3. **WINDOW FUNCTION** (`AVG() OVER (...)`) — rolling 7- and 28-day averages
-4. **CASE WHEN** — band classification
-5. **GROUP BY** — aggregate to player-day
-6. **HAVING** — filter players with sufficient history
-7. **ORDER BY** — rank by IRS
-8. **WHERE** — date range parameter
-9. **SELECT DISTINCT** — deduplicate session rows
-10. **AVG / SUM / COUNT** — aggregates
-11. **COALESCE** — null handling for missing sessions
-12. **LEFT JOIN** — include players without injuries
-13. **UNION** — combine training and match load
-14. **LIMIT** — top-N ranking for dashboard
-15. **ROUND** — formatting
+1. **WITH (CTE)** — `daily_load` isolates raw load per athlete-day; `rolling` computes the window aggregates
+2. **WINDOW FUNCTION** (`AVG() OVER (... ROWS BETWEEN)`) — rolling 7- and 28-session averages partitioned by athlete
+3. **COUNT() OVER** — tracks window fill count to gate IRS calculation
+4. **JOIN / LEFT JOIN** — links to `dim_athlete_multimodal`, `dim_date`, `dim_age_group`
+5. **CASE WHEN** — four-band risk classification
+6. **COALESCE** — null-safe load aggregation
+7. **NULLIF** — prevents division-by-zero in IRS calculation
+8. **SUM(CASE WHEN ...)** — aggregates injury flags per session-day
+9. **GROUP BY / HAVING** — collapse to athlete-day; filter to chronic window full
+10. **WHERE ... BETWEEN** — date range filter
+11. **ORDER BY / LIMIT** — rank by IRS descending
 
-*(15+ keywords — satisfies the "appropriate complexity" criterion.)*
+*(> 20 SQL keywords — satisfies the complexity criterion)*
 
-See `sql/04_analytics/40_irs_rolling_window.sql`.
+## Calculating the Adjusted IRS
 
-## Calculating KPIs and Decision Rules
+The view `vw_adjusted_irs_by_age_group` extends the raw IRS by joining two cross-source factors at `age_group_id` level:
 
-*[Walk through the query structure block by block, show result snippet, connect back to the @eq-irs definition.]*
+```sql
+CREATE OR REPLACE VIEW vw_adjusted_irs_by_age_group AS
+WITH university_factor AS (
+    SELECT age_group_id,
+           1.0 + (0.3 * AVG(previous_injury_count)) AS prior_injury_multiplier
+    FROM fact_university_benchmark GROUP BY age_group_id
+),
+european_group_rates AS (
+    SELECT p.age_group_id,
+           COUNT(i.injury_id) / COUNT(DISTINCT p.eu_player_id) AS group_injury_rate
+    FROM dim_player_european p
+    LEFT JOIN bridge_player_team b  ON b.eu_player_id = p.eu_player_id
+    LEFT JOIN fact_injury_european i ON i.bridge_id   = b.bridge_id
+    GROUP BY p.age_group_id
+), ...
+```
 
-## Validation Against Observed Injuries
+The view joins `fact_load_metrics` (S1 IRS) with both CTEs on `age_group_id`, producing `adjusted_irs = irs × prior_injury_multiplier × position_age_factor` for each athlete-day row.
 
-*[Show the cross-tab: IRS band × observed injury within next 7 days, demonstrating the rule works.]*
+## Results
+
+IRS distribution across 15,420 session-days (raw `fact_load_metrics`):
+
+| Risk Band | Session-days | Share |
+|---|---|---|
+| Optimal | 8,319 | 54% |
+| Not enough history | 4,212 | 27% |
+| Underloaded | 1,452 | 9% |
+| Caution | 1,437 | 9% |
+
+Adjusted IRS distribution (11,208 rows with full chronic window):
+
+| Risk Band | Session-days | Share |
+|---|---|---|
+| Caution | 4,103 | 37% |
+| Optimal | 2,304 | 21% |
+| Underloaded | 113 | 1% |
+| High Risk | 99 | 1% |
+
+The shift from raw to adjusted — notably from Optimal to Caution — reflects the prior injury multiplier elevating scores for age groups with higher historical injury burden. The 21–24 age group drives most High Risk rows (athlete 79, adjusted IRS up to 2.45 in late February 2024).
 
 # Efficiency & Query Performance {#sec-Efficiency}
 
 ## Baseline Query and Performance Context
 
-*[Run the IRS query on the full dataset, capture `EXPLAIN ANALYZE` output.]*
+The IRS rolling window query scans `fact_training_session` (15,420 rows) and joins to `dim_date` to establish a date-ordered partition per athlete. Without indexes, MySQL performs full table scans on each join.
 
-## Analysis without Indexes (Baseline)
+*[Run `EXPLAIN ANALYZE` on 40_irs_rolling_window.sql and insert output here]*
 
-*[Screenshot execution plan, note full table scans, measure runtime.]*
+## Optimization Approach 1: Composite Index on (mm_athlete_id, date_id)
 
-## Optimization Approach 1: Composite Index on (player_id, session_date)
+The window function partitions on `mm_athlete_id` and orders by `date_id`. A composite index on `fact_training_session(mm_athlete_id, date_id)` allows MySQL to satisfy both the partition and the ordering without a filesort. The same index supports the JOIN in `fact_load_metrics`.
 
-*[Rationale — window function partitions on player_id and orders by date. Screenshot after.]*
+```sql
+CREATE INDEX IF NOT EXISTS idx_ts_athlete_date
+    ON fact_training_session (mm_athlete_id, date_id);
+```
 
-## Optimization Approach 2: Materialized IRS Summary Table
+*[Insert EXPLAIN output before and after index — show rows scanned reduction]*
 
-*[MySQL has no true materialized views; we precompute `fact_load_metrics` nightly via INSERT...SELECT. Metabase queries this cheap denormalized table.]*
+## Optimization Approach 2: Materialized IRS Table (fact_load_metrics)
 
-## Optimization Approach 3: Selective Filtering via Date Partition
+MySQL 8 does not support native materialized views. `fact_load_metrics` acts as a materialized summary: the expensive rolling window calculation runs once during ELT and the result is stored. Metabase and dashboard queries read directly from `fact_load_metrics` rather than recomputing the window on every page load.
 
-*[Most dashboard queries only look at a rolling window. Narrow the working set.]*
+In production this table would be refreshed nightly via a MySQL `EVENT` or an external scheduler:
+
+```sql
+TRUNCATE TABLE fact_load_metrics;
+INSERT INTO fact_load_metrics ... -- same window SELECT
+```
+
+The dashboard query cost drops from a full window scan of 15,420 rows to a simple range scan with the `idx_lm_band_date` covering index.
+
+## Optimization Approach 3: Covering Index for Dashboard Filters
+
+Metabase filters typically combine `risk_band` and a date range. A covering index on `fact_load_metrics(risk_band, date_id)` allows the storage engine to satisfy these queries from the index alone without touching the base table rows:
+
+```sql
+CREATE INDEX IF NOT EXISTS idx_lm_band_date
+    ON fact_load_metrics (risk_band, date_id);
+```
 
 ## Performance Comparison
 
+*[Fill in after running EXPLAIN ANALYZE on the VM]*
+
 | Approach | Rows scanned | Runtime (ms) | Speedup |
 |---|---|---|---|
-| Baseline | tbd | tbd | 1× |
-| + indexes | tbd | tbd | tbd× |
-| + materialized | tbd | tbd | tbd× |
-| + date filter | tbd | tbd | tbd× |
+| Baseline (no indexes) | tbd | tbd | 1× |
+| + composite index | tbd | tbd | tbd× |
+| + materialized table | tbd | tbd | tbd× |
+| + covering index | tbd | tbd | tbd× |
 
 # Visualization & Decision Support {#sec-Visualization}
 
-## Setting up Metabase
+## Plan
 
-*[Docker setup on the VM, connection to MySQL with a read-only analytics user.]*
+Metabase will be connected to `injury_risk_predictor` on the VM with a read-only analytics user. The planned dashboard cards are:
 
-## From Queries to Visualizations
+1. **Adjusted Risk Ranking** — table of athletes sorted by `adjusted_irs` descending, colour-coded by `adjusted_risk_band`
+2. **IRS over Time** — line chart per athlete from `vw_adjusted_irs_by_age_group`, with reference lines at 1.2 and 2.0
+3. **Injury Type Heatmap** — count of `injury_name` by `age_group_label` from `fact_injury_european`
+4. **Benchmark Comparison** — average `previous_injury_count` and `training_hours_per_week` by position group from `fact_university_benchmark`
 
-*[Each SQL query in `sql/04_analytics/` maps to one Metabase card.]*
-
-## Validating Results of Metabase Queries
-
-*[Show that the card output matches the raw SQL output — same numbers, different presentation.]*
-
-## Dashboard "Injury Risk Predictor" {#sec-Dashboard}
-
-### Player Risk Ranking Card
-
-*[Screenshot. Sorted by IRS descending, colour-coded by band.]*
-
-### IRS-over-Time Card
-
-*[Screenshot. Line chart per selected player with reference bands at 0.8 and 1.5.]*
-
-### Injury Hotspot Card
-
-*[Screenshot. Heatmap of injury count by position and body region.]*
-
-### Interactive Parameters
-
-- **Player filter** — single-select
-- **Date range** — rolling window picker
-- **Workload metric** — RPE vs. distance vs. high-speed running
-- **IRS threshold** — slider for the high-risk cutoff (default 1.5)
-
-## Applying the Decision Rule
-
-*[Scenario: Coach Andrin opens the dashboard Monday morning before the week's first training session. Player X shows IRS = 1.62, in the high-risk band. Coach reduces Player X's planned high-intensity session to a mobility/recovery session. Rule applied, decision logged.]*
+*[Metabase setup and screenshots to be added in the final report]*
 
 # Conclusions & Lessons Learned {#sec-Conclusion}
 
 ## Working with the Database
 
-*[3NF tradeoffs, MySQL-specific quirks (no materialized views, utf8mb4 collation gotchas), LOAD DATA vs. INSERT performance.]*
+Designing around three datasets with no shared player identifier forced a deliberate integration choice: conformed dimensions over a forced entity merge. This kept the schema honest — no artificial joins are claimed — but limits the analysis to aggregate-level cross-source comparisons. In hindsight, using `dim_age_group` as the sole cross-source key is methodologically sound for a proof-of-concept but would not scale to a production system where per-player longitudinal tracking is needed.
 
-## Project Organization
+MySQL-specific constraints shaped several design decisions. The absence of native materialized views led us to use `fact_load_metrics` as a pre-computed summary table refreshed via TRUNCATE + INSERT. The `LOAD DATA LOCAL INFILE` path sensitivity and the requirement to enable `local_infile` on the server side added friction during initial data loading.
 
-*[What worked in weekly splits, what didn't.]*
+## What's Still To Do
 
-## Teamwork
-
-*[Git workflow, how SQL changes were reviewed.]*
+- Run `EXPLAIN ANALYZE` on the IRS query before and after index creation to produce the three optimization proofs
+- Set up Metabase, connect to VM, build the four planned dashboard cards
+- Merge the `Andrin/InitializingDB-CreatingTables` branch (contains Python preprocessing scripts) into the main branch
 
 ## Use of Artificial Intelligence
 
-*[Full disclosure of AI tools used and purposes: e.g. Claude for schema review, ChatGPT for SQL query refactoring, Copilot for boilerplate — per rubric requirement.]*
+Claude Code (Anthropic) was used throughout the project for schema design review, SQL query development, ELT script writing, and report drafting. OpenAI Codex was used for cross-checking SQL logic. All generated SQL was reviewed, tested against the live database, and adapted by the team before committing.
 
 # References {.unnumbered}
+
+Ekstrand, J. et al. UEFA Injury Studies. *British Journal of Sports Medicine*, various years.
+
+Fuller, C. W. et al. (2006). *Consensus statement on injury definitions and data collection procedures in studies of football injuries.* British Journal of Sports Medicine, 40(3), 193–201.
 
 Gabbett, T. J. (2016). *The training-injury prevention paradox: should athletes be training smarter and harder?* British Journal of Sports Medicine, 50(5), 273–280.
 
@@ -364,4 +540,10 @@ OECD (2015). *Data-Driven Innovation: Big Data for Growth and Well-Being.* OECD 
 
 # Appendix {.unnumbered}
 
-*[Full SQL listings if not already inline, extended EXPLAIN plans, additional dashboard screenshots.]*
+Full SQL listings are available in the project repository under `sql/`. The ELT pipeline runs in three steps:
+
+1. `sql/01_schema/01_create_tables.sql` — DDL
+2. `sql/02_load/20_load_staging.sql` — staging load
+3. `sql/03_transform/30_transform_dims_facts.sql` — transform + view
+
+*[Extended EXPLAIN plans and additional dashboard screenshots to be added in final report]*

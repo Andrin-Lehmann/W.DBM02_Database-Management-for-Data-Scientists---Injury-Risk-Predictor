@@ -1,24 +1,66 @@
--- =============================================================================
 -- 51_create_indexes.sql
--- Indexing strategy for the IRS query.
--- Expected effect: replaces full scans of fact_training_session and
--- bridge_appearance with range scans on the composite (player_id, date_id) key.
--- =============================================================================
+-- Re-assert optimization indexes without relying on CREATE INDEX IF NOT EXISTS,
+-- which is not portable across all MySQL 8 installations.
 
--- Already present inline in the DDL, but re-asserted here for traceability.
--- If running after 01_create_tables.sql, MySQL will warn that the keys exist.
+USE injury_risk_predictor;
 
-CREATE INDEX IF NOT EXISTS idx_session_player_date
-    ON fact_training_session (player_id, date_id);
+DROP PROCEDURE IF EXISTS create_index_if_missing;
 
-CREATE INDEX IF NOT EXISTS idx_injury_player_date
-    ON fact_injury (player_id, date_id);
+DELIMITER //
 
-CREATE INDEX IF NOT EXISTS idx_appearance_player
-    ON bridge_appearance (player_id);
+CREATE PROCEDURE create_index_if_missing(
+    IN p_table_name VARCHAR(64),
+    IN p_index_name VARCHAR(64),
+    IN p_index_columns VARCHAR(255)
+)
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.statistics
+        WHERE table_schema = DATABASE()
+          AND table_name = p_table_name
+          AND index_name = p_index_name
+    ) THEN
+        SET @ddl = CONCAT(
+            'CREATE INDEX `', p_index_name, '` ON `',
+            p_table_name, '` (', p_index_columns, ')'
+        );
+        PREPARE stmt FROM @ddl;
+        EXECUTE stmt;
+        DEALLOCATE PREPARE stmt;
+    END IF;
+END//
 
--- Covering index on the materialized load table — supports dashboard filters
-CREATE INDEX IF NOT EXISTS idx_load_band_date
-    ON fact_load_metrics (risk_band, date_id);
+DELIMITER ;
 
-ANALYZE TABLE fact_training_session, fact_injury, bridge_appearance, fact_load_metrics;
+-- composite: window function partitions on mm_athlete_id, orders by date_id
+CALL create_index_if_missing(
+    'fact_training_session',
+    'idx_ts_athlete_date',
+    '`mm_athlete_id`, `date_id`'
+);
+
+-- composite: injury lookups by bridge + date
+CALL create_index_if_missing(
+    'fact_injury_european',
+    'idx_inj_bridge_date',
+    '`bridge_id`, `date_id`'
+);
+
+-- bridge lookups by team; usually already defined inline in the DDL
+CALL create_index_if_missing(
+    'bridge_player_team',
+    'idx_bpt_team',
+    '`team_id`'
+);
+
+-- covering index: Metabase dashboard filters on risk_band + date range
+CALL create_index_if_missing(
+    'fact_load_metrics',
+    'idx_lm_band_date',
+    '`risk_band`, `date_id`'
+);
+
+DROP PROCEDURE create_index_if_missing;
+
+ANALYZE TABLE fact_training_session, fact_injury_european, bridge_player_team, fact_load_metrics;
