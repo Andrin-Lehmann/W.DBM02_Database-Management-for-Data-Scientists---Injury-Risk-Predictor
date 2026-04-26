@@ -4,6 +4,13 @@
 
 USE injury_risk_predictor;
 
+-- facts are rebuildable from staging + dimensions; clear them to keep this
+-- transform script safe to rerun during development and grading.
+TRUNCATE TABLE fact_load_metrics;
+TRUNCATE TABLE fact_training_session;
+TRUNCATE TABLE fact_injury_european;
+TRUNCATE TABLE fact_university_benchmark;
+
 -- static dims
 INSERT INTO dim_age_group (age_group_label, min_age, max_age)
 VALUES ('16-20',16,20),('21-24',21,24),('25-29',25,29),
@@ -100,7 +107,13 @@ WHERE injury_from_parsed IS NOT NULL
 INSERT INTO dim_athlete_multimodal (source_id, gender, sport_type, age, bmi, age_group_id)
 SELECT DISTINCT m.athlete_id, m.gender, m.sport_type, m.age, m.bmi, ag.age_group_id
 FROM tmp_multimodal_prepared m
-JOIN dim_age_group ag ON m.age BETWEEN ag.min_age AND ag.max_age;
+JOIN dim_age_group ag ON m.age BETWEEN ag.min_age AND ag.max_age
+ON DUPLICATE KEY UPDATE
+    gender = VALUES(gender),
+    sport_type = VALUES(sport_type),
+    age = VALUES(age),
+    bmi = VALUES(bmi),
+    age_group_id = VALUES(age_group_id);
 
 -- fact_university_benchmark: S3 benchmark profiles
 INSERT INTO fact_university_benchmark
@@ -263,3 +276,5 @@ UNION ALL SELECT 'fact_university_benchmark', COUNT(*) FROM fact_university_benc
 UNION ALL SELECT 'fact_injury_european', COUNT(*) FROM fact_injury_european
 UNION ALL SELECT 'fact_training_session', COUNT(*) FROM fact_training_session
 UNION ALL SELECT 'fact_load_metrics',   COUNT(*) FROM fact_load_metrics;
+
+DROP TABLE IF EXISTS tmp_multimodal_prepared;

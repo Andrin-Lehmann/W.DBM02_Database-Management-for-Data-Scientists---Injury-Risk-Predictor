@@ -1,124 +1,129 @@
 # Injury Risk Predictor
 
-**Module:** Database Management for Data Scientists (DBM) — HSLU, MSc Applied Information and Data Science  
-**Stack:** MySQL 8 · Metabase · Quarto (PDF report)  
-**Team:** TBD
+**Module:** Database Management for Data Scientists (DBM), HSLU MSc Applied Information and Data Science  
+**Stack:** MySQL 8/9, Metabase, Quarto  
+**Deliverable:** `injury_risk_report.qmd`
 
----
-
-## 1 · Use case in one sentence
+## Use Case
 
 A football coach uses an interactive dashboard to identify workload risk patterns and injury benchmarks so that training load can be adjusted before injury risk becomes critical.
 
-## 2 · Decision rule
+## Decision Rule
 
-| IRS band | Meaning | Coach action |
+The project uses an Injury Risk Score (IRS) based on the acute:chronic workload ratio. The implemented SQL bands are:
+
+| IRS band | Range | Coach action |
+|---|---:|---|
+| High Risk | `IRS >= 2.0` | Reduce load immediately |
+| Caution | `1.2 <= IRS < 2.0` | Monitor closely, reduce slightly |
+| Optimal | `0.8 <= IRS < 1.2` | Maintain plan |
+| Underloaded | `IRS < 0.8` | Progressively increase load |
+| Not enough history | fewer than 28 sessions | Wait until chronic window is populated |
+
+The raw ACWR/IRS logic follows Gabbett's workload framework. The upper high-risk threshold is set to `2.0` in the implemented dashboard because the adjusted score multiplies raw IRS by benchmark factors from the University and European injury datasets.
+
+## Data Sources
+
+| Dataset | Role in schema | Granularity |
 |---|---|---|
-| IRS ≥ 1.5 | High risk (sweet spot exceeded) | Reduce load / rest player |
-| 0.8 ≤ IRS < 1.5 | Optimal training zone | Maintain plan |
-| IRS < 0.8 | Undertraining | Progressively increase load |
+| Multimodal Sports Injury Dataset | Workload, session metrics, IRS calculation | session x anonymous athlete |
+| European Football Injuries 2020-2025 | Football player, team, and injury-event layer | injury event |
+| University Football Injury Prediction Dataset | Static benchmark and profile layer | anonymous player profile |
 
-Thresholds follow Gabbett's acute:chronic workload ratio framework (British Journal of Sports Medicine, 2016).
+The datasets do not share a universal player ID. The project therefore uses source-specific subject areas and joins only at defensible aggregate levels such as age group and position group. See `docs/data_integration.md`.
 
-## 3 · Data sources
-
-| # | Dataset | Role in schema | Granularity |
-|---|---|---|---|
-| A | Multimodal Sports Injury Dataset | Workload, session metrics, IRS calculation | Session × athlete |
-| B | European Football Injuries 2020–2025 | Football player, team, and injury-event layer | Injury event |
-| C | University Football Injury Prediction Dataset (~800 players) | Static benchmark and profile layer | Player (static) |
-
-The datasets are independent in form and content. Because they do not share a universal player ID, the project uses a hybrid integration strategy: source-specific player/athlete layers plus shared benchmark dimensions such as age group and position group. Details are documented in `docs/data_integration.md`.
-
-## 4 · Repository layout
+## Repository Layout
 
 ```text
 injury-risk-predictor/
-├── README.md                          ← this file
-├── injury_risk_report.qmd             ← main Quarto report (the deliverable)
-├── _quarto.yml                        ← Quarto project config
-├── requirements.txt                   ← Python deps for preprocessing scripts
-├── .gitignore
-│
-├── data/
-│   ├── raw/                           ← original downloads, unchanged (gitignored if large)
-│   │   ├── multimodal/
-│   │   ├── european_injuries/
-│   │   └── university/
-│   └── processed/                     ← CSVs ready for MySQL LOAD DATA (UTF-8, comma-delimited)
-│
-├── sql/
-│   ├── 01_schema/
-│   │   └── 01_create_tables.sql
-│   ├── 02_load/
-│   │   ├── 10_load_staging_multimodal.sql
-│   │   ├── 11_load_staging_european.sql
-│   │   └── 12_load_staging_university.sql
-│   ├── 03_transform/
-│   │   ├── 20_insert_dim_team.sql
-│   │   ├── 21_insert_dim_position_group.sql
-│   │   ├── 22_insert_dim_player_european.sql
-│   │   ├── 23_insert_dim_date.sql
-│   │   ├── 24_insert_dim_athlete_multimodal.sql
-│   │   ├── 25_insert_fact_training_session.sql
-│   │   ├── 26_insert_fact_injury_european.sql
-│   │   ├── 27_insert_fact_load_metrics.sql
-│   │   └── 28_insert_fact_university_benchmark.sql
-│   ├── 04_analytics/
-│   │   ├── 40_irs_rolling_window.sql
-│   │   ├── 41_irs_decision_bands.sql
-│   │   └── 42_injury_rate_by_band.sql
-│   └── 05_optimization/
-│       ├── 50_baseline_explain.sql
-│       ├── 51_create_indexes.sql
-│       ├── 52_materialized_irs.sql
-│       └── 53_explain_after.sql
-│
-├── Pictures/
-│   ├── er_diagram.png
-│   ├── schema_ddl.png
-│   ├── execution_plan_before.png
-│   ├── execution_plan_after.png
-│   ├── metabase_dashboard.png
-│   └── metabase_risk_ranking.png
-│
-├── metabase/
-│   ├── dashboard_export.json
-│   └── connection_setup.md
-│
-├── scripts/
-│   ├── preprocess_multimodal.py
-│   ├── preprocess_european.py
-│   └── preprocess_university.py
-│
-└── docs/
-    ├── data_integration.md
-    ├── setup_mysql.md
-    └── setup_metabase.md
-````
+|-- README.md
+|-- injury_risk_report.qmd
+|-- _quarto.yml
+|-- data/
+|   |-- raw/
+|   |   |-- data.csv
+|   |   |-- full_dataset_thesis - 1.csv
+|   |   |-- multimodal_sports_injury_dataset.csv
+|   |   `-- raw_data.ipynb
+|   `-- processed/
+|-- docs/
+|   |-- data_integration.md
+|   `-- midterm_draft_report.md
+|-- sql/
+|   |-- 01_schema/
+|   |   |-- 00_initialize_db.sql
+|   |   `-- 01_create_tables.sql
+|   |-- 02_load/
+|   |   `-- 20_load_staging.sql
+|   |-- 03_transform/
+|   |   |-- 30_transform_dims_facts.sql
+|   |   `-- 31_fix_load_metrics.sql
+|   |-- 04_analytics/
+|   |   `-- 40_irs_rolling_window.sql
+|   `-- 05_optimization/
+|       |-- 51_create_indexes.sql
+|       `-- 52_materialized_irs.sql
+`-- scripts/
+    `-- report_data.py
+```
 
-## 5 · How to reproduce
+## Reproduce the Database
 
-1. **Install MySQL 8** on the HSLU Lab Services VM (see `docs/setup_mysql.md`).
-2. **Place raw data** in `data/raw/` (download references in `docs/data_integration.md`).
-3. **Run preprocessing**: `python scripts/preprocess_*.py` → writes cleaned CSVs to `data/processed/`.
-4. **Execute SQL scripts in order**: `01_schema` → `02_load` → `03_transform` → `04_analytics` → `05_optimization`.
-5. **Start Metabase**, connect to MySQL, and import `metabase/dashboard_export.json`.
-6. **Render the report**: `quarto render injury_risk_report.qmd`.
+1. Create the database:
 
-## 6 · Submission access (to be filled before ILIAS deadline)
+   ```sql
+   SOURCE sql/01_schema/00_initialize_db.sql;
+   SOURCE sql/01_schema/01_create_tables.sql;
+   ```
 
-| Component | URL | User | Password |
-|---|---|---|---|
-| VM | `tbd` | `tbd` | `tbd` |
-| MySQL | `tbd:3306` | `tbd` | `tbd` |
-| Metabase | `http://tbd:3000` | `tbd` | `tbd` |
+2. Load staging tables:
 
-## 7 · Team
+   ```sql
+   SOURCE sql/02_load/20_load_staging.sql;
+   ```
 
-| Name | Email | Role |
-|---|---|---|
-| Andrin Kohler | andrin.kohler@stud.hslu.ch | Data modeling & ELT |
-| TBD | — | — |
-| TBD | — | — |
-| TBD | — | — |
+3. Transform staging data into dimensions, facts, and the adjusted IRS view:
+
+   ```sql
+   SOURCE sql/03_transform/30_transform_dims_facts.sql;
+   ```
+
+4. Rebuild load metrics independently if needed:
+
+   ```sql
+   SOURCE sql/05_optimization/52_materialized_irs.sql;
+   ```
+
+5. Add optimization indexes:
+
+   ```sql
+   SOURCE sql/05_optimization/51_create_indexes.sql;
+   ```
+
+6. Run the analytics query:
+
+   ```sql
+   SOURCE sql/04_analytics/40_irs_rolling_window.sql;
+   ```
+
+## Environment
+
+Local credentials belong in `.env`, which is intentionally ignored by Git.
+
+Expected variables:
+
+```text
+MYSQL_HOST=
+MYSQL_PORT=
+MYSQL_DATABASE=
+MYSQL_USER=
+MYSQL_PASSWORD=
+```
+
+The helper script `scripts/report_data.py` reads these values from `.env`; it should not contain credentials.
+
+## Notes
+
+- `data/raw/*.csv` is currently tracked because these small project datasets are part of the reproducible DBM hand-in.
+- `.mcp.json` and local Codex/Claude bridge scripts are ignored because they are local tooling, not part of the database deliverable.
+- `injury_risk_report.qmd` is the final report file. `docs/midterm_draft_report.md` is a lightweight draft/status document.

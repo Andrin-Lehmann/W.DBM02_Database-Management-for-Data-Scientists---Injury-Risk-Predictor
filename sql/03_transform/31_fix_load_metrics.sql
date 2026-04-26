@@ -2,6 +2,8 @@ USE injury_risk_predictor;
 
 ALTER TABLE fact_load_metrics MODIFY risk_band VARCHAR(20) DEFAULT NULL;
 
+TRUNCATE TABLE fact_load_metrics;
+
 INSERT INTO fact_load_metrics
     (mm_athlete_id, date_id, session_load, acute_load_7, chronic_load_28, irs, risk_band)
 SELECT
