@@ -48,7 +48,8 @@ injury-risk-predictor/
 |   `-- processed/
 |-- docs/
 |   |-- data_integration.md
-|   `-- midterm_draft_report.md
+|   |-- erd_injury_risk_predictor.mmd
+|   `-- midterm_draft_report.qmd
 |-- sql/
 |   |-- 01_schema/
 |   |   |-- 00_initialize_db.sql
@@ -126,4 +127,4 @@ The helper script `scripts/report_data.py` reads these values from `.env`; it sh
 
 - `data/raw/*.csv` is currently tracked because these small project datasets are part of the reproducible DBM hand-in.
 - `.mcp.json` and local Codex/Claude bridge scripts are ignored because they are local tooling, not part of the database deliverable.
-- `injury_risk_report.qmd` is the final report file. `docs/midterm_draft_report.md` is a lightweight draft/status document.
+- `injury_risk_report.qmd` is the final report file. `docs/midterm_draft_report.qmd` is the midterm draft report.
