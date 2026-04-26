@@ -38,3 +38,5 @@ scripts/run_elt.py
 scripts/claude_mcp_server.js
 scripts/connect_agent_bridge.cmd
 scripts/setup_agent_bridge.ps1
+**/*.quarto_ipynb
+docs/*_files/

@@ -1,0 +1,52 @@
+flowchart LR
+    classDef dim fill:#EEF2FF,stroke:#6D6AEF,color:#111827,stroke-width:1px
+    classDef fact fill:#F8FAFC,stroke:#64748B,color:#111827,stroke-width:1px
+    classDef bridge fill:#FFF7ED,stroke:#EA580C,color:#111827,stroke-width:1px
+    classDef note fill:#ECFDF5,stroke:#059669,color:#064E3B,stroke-width:1px
+
+    subgraph C["Conformed dimensions"]
+        direction TB
+        AGE["dim_age_group<br/>PK age_group_id<br/>UK age_group_label"]:::dim
+        POS["dim_position_group<br/>PK position_group_id<br/>UK position_group_code"]:::dim
+        DATE["dim_date<br/>PK date_id<br/>UK full_date"]:::dim
+    end
+
+    subgraph S1["S1 Multimodal workload"]
+        direction TB
+        ATH["dim_athlete_multimodal<br/>PK mm_athlete_id<br/>UK source_id<br/>FK age_group_id"]:::dim
+        TS["fact_training_session<br/>PK training_session_id<br/>FK mm_athlete_id<br/>FK date_id<br/>training_load"]:::fact
+        LM["fact_load_metrics<br/>PK load_metrics_id<br/>FK mm_athlete_id<br/>FK date_id<br/>IRS and risk_band"]:::fact
+        ATH -->|"records"| TS
+        ATH -->|"derives"| LM
+    end
+
+    subgraph S2["S2 European injuries"]
+        direction TB
+        PLAYER["dim_player_european<br/>PK eu_player_id<br/>UK player_name<br/>FK age_group_id<br/>FK position_group_id"]:::dim
+        TEAM["dim_team<br/>PK team_id<br/>UK team_name"]:::dim
+        BPT["bridge_player_team<br/>PK bridge_id<br/>FK eu_player_id<br/>FK team_id<br/>season"]:::bridge
+        INJ["fact_injury_european<br/>PK injury_id<br/>FK bridge_id<br/>FK date_id<br/>injury_name"]:::fact
+        PLAYER -->|"plays for"| BPT
+        TEAM -->|"has players"| BPT
+        BPT -->|"contextualizes"| INJ
+    end
+
+    subgraph S3["S3 University benchmark"]
+        direction TB
+        UB["fact_university_benchmark<br/>PK university_row_id<br/>FK age_group_id<br/>FK position_group_id<br/>previous injuries"]:::fact
+    end
+
+    AGE -->|"groups"| ATH
+    AGE -->|"groups"| PLAYER
+    AGE -->|"benchmarks"| UB
+
+    POS -->|"classifies"| PLAYER
+    POS -->|"benchmarks"| UB
+
+    DATE -->|"dates"| TS
+    DATE -->|"dates"| LM
+    DATE -->|"dates"| INJ
+
+    NOTE["No universal player ID<br/>Cross-source comparison only via<br/>age group and position group"]:::note
+    NOTE -.-> AGE
+    NOTE -.-> POS
