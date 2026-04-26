@@ -1,24 +1,24 @@
--- =============================================================================
 -- 51_create_indexes.sql
--- Indexing strategy for the IRS query.
--- Expected effect: replaces full scans of fact_training_session and
--- bridge_appearance with range scans on the composite (player_id, date_id) key.
--- =============================================================================
+-- Indexes are already defined inline in the DDL (01_create_tables.sql).
+-- This script re-asserts them for traceability and adds one covering index
+-- for dashboard risk-band filtering. MySQL will warn if an index already exists.
 
--- Already present inline in the DDL, but re-asserted here for traceability.
--- If running after 01_create_tables.sql, MySQL will warn that the keys exist.
+USE injury_risk_predictor;
 
-CREATE INDEX IF NOT EXISTS idx_session_player_date
-    ON fact_training_session (player_id, date_id);
+-- composite: window function partitions on mm_athlete_id, orders by date_id
+CREATE INDEX IF NOT EXISTS idx_ts_athlete_date
+    ON fact_training_session (mm_athlete_id, date_id);
 
-CREATE INDEX IF NOT EXISTS idx_injury_player_date
-    ON fact_injury (player_id, date_id);
+-- composite: injury lookups by bridge + date
+CREATE INDEX IF NOT EXISTS idx_inj_bridge_date
+    ON fact_injury_european (bridge_id, date_id);
 
-CREATE INDEX IF NOT EXISTS idx_appearance_player
-    ON bridge_appearance (player_id);
+-- bridge lookups by team
+CREATE INDEX IF NOT EXISTS idx_bpt_team
+    ON bridge_player_team (team_id);
 
--- Covering index on the materialized load table — supports dashboard filters
-CREATE INDEX IF NOT EXISTS idx_load_band_date
+-- covering index: Metabase dashboard filters on risk_band + date range
+CREATE INDEX IF NOT EXISTS idx_lm_band_date
     ON fact_load_metrics (risk_band, date_id);
 
-ANALYZE TABLE fact_training_session, fact_injury, bridge_appearance, fact_load_metrics;
+ANALYZE TABLE fact_training_session, fact_injury_european, bridge_player_team, fact_load_metrics;
