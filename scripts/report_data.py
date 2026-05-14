@@ -68,12 +68,12 @@ print_rows(
     lambda r: f"  {r[0]}: {r[1]}",
 )
 
-print("\n## ADJUSTED IRS BAND DISTRIBUTION")
+print("\n## ADJUSTED IRS BAND DISTRIBUTION (dashboard view)")
 print_rows(
     cur,
     """
     SELECT adjusted_risk_band, COUNT(*) AS cnt
-    FROM vw_adjusted_irs_by_age_group
+    FROM vw_adjusted_irs_with_position
     WHERE adjusted_irs IS NOT NULL
     GROUP BY adjusted_risk_band
     ORDER BY cnt DESC
@@ -88,7 +88,7 @@ print_rows(
     SELECT mm_athlete_id, age_group_label, full_date, ROUND(irs,3),
            ROUND(prior_injury_multiplier,3), ROUND(position_age_factor,3),
            ROUND(adjusted_irs,3), adjusted_risk_band
-    FROM vw_adjusted_irs_by_age_group
+    FROM vw_adjusted_irs_with_position
     WHERE adjusted_irs IS NOT NULL
     ORDER BY adjusted_irs DESC
     LIMIT 10

@@ -123,9 +123,9 @@ $$
 $$
 
 -   **prior\_injury\_multiplier** (S3): $1.0 + 0.3 \times \text{avg\_previous\_injury\_count}$ per age group — captures historical injury burden (Fuller et al., 2006)
--   **position\_age\_factor** (S2): ratio of age-group injury rate to overall average injury rate from the European dataset — captures positional and age-related risk exposure (Ekstrand et al., UEFA Injury Studies)
+-   **position\_age\_factor** (S2): ratio of age-position injury rate to overall average injury rate from the European dataset — captures benchmark-level positional and age-related risk exposure (Ekstrand et al., UEFA Injury Studies)
 
-Both factors are joined at `age_group_id` level — the finest grain at which all three sources can be compared without a shared player identifier.
+The base adjusted view joins factors at `age_group_id` level — the finest grain at which all three sources can be compared without a shared player identifier. The Metabase dashboard uses an additional view, `vw_adjusted_irs_with_position`, to support position filters and the hypothetical scenario tool. Because the multimodal workload dataset has no observed position field, anonymous athletes receive a stable demonstration position group for dashboard filtering; position-sensitive interpretations are therefore benchmark support, not observed athlete position facts.
 
 ## Decision Rule
 
@@ -138,7 +138,7 @@ Based on the Adjusted IRS, the coach applies the following four-band decision ru
 | 0.8 – 1.2 | Optimal | Maintain current load |
 | < 0.8 | Underloaded | Consider increasing load |
 
-Thresholds follow Gabbett (2016) for the base IRS; the upper band of the adjusted score is raised to 2.0 because the multipliers inflate values above the raw IRS range. In our loaded dataset, the adjusted IRS distribution across 11,208 athletes with a full 28-session history is: Caution 4,103 · Optimal 2,304 · High Risk 99 · Underloaded 113.
+Thresholds follow Gabbett (2016) for the base IRS; the upper band of the adjusted score is raised to 2.0 because the multipliers inflate values above the raw IRS range. In the live Metabase dashboard view, the adjusted IRS distribution across 6,619 scored athlete-days is: Caution 3,272 · Optimal 1,987 · Underloaded 1,242 · High Risk 118.
 
 # Data Model & Database Schema {#sec-DatabaseModel}
 
@@ -230,7 +230,7 @@ The schema separates into three source-specific subject areas connected by two s
 - `bridge_player_team` → `fact_injury_european` (1:N)
 - All three player/athlete dims → `dim_age_group` (N:1)
 
-*[Insert ERD screenshot from DBeaver here]*
+![Entity relationship diagram of the injury risk predictor schema.](Pictures/erd_injury_risk_predictor.png){#fig-erd width=95%}
 
 ## Physical Database Schema in DDL
 
@@ -276,7 +276,7 @@ Loading raw text first and transforming inside the database keeps the pipeline r
 Because no universal player identifier exists across the three sources, integration uses two strategies:
 
 1. **Source-specific subject areas**: each source populates its own dimension and fact tables. IRS is computed from S1 only; injury events come from S2 only; benchmark aggregates come from S3 only.
-2. **Conformed dimension join**: cross-source comparisons (the adjusted IRS) are made by joining `dim_age_group` across all three source-specific tables. The `position_age_factor` from S2 and the `prior_injury_multiplier` from S3 are joined to S1 IRS rows via `age_group_id`.
+2. **Conformed dimension join**: cross-source comparisons (the adjusted IRS) are made by joining `dim_age_group` across all three source-specific tables. The base `position_age_factor` from S2 and the `prior_injury_multiplier` from S3 are joined to S1 IRS rows via `age_group_id`; the Metabase dashboard adds a transparent demonstration position layer for filtering and scenario analysis.
 
 A known consequence: athletes in `dim_athlete_multimodal` (S1) and players in `dim_player_european` (S2) are different populations that cannot be row-level matched. The adjusted IRS applies age-group-level context from S2 and S3 to individual S1 athletes — this is disclosed as a benchmark comparison, not an individual-level linkage.
 
@@ -419,7 +419,7 @@ european_group_rates AS (
 ), ...
 ```
 
-The view joins `fact_load_metrics` (S1 IRS) with both CTEs on `age_group_id`, producing `adjusted_irs = irs × prior_injury_multiplier × position_age_factor` for each athlete-day row.
+The view joins `fact_load_metrics` (S1 IRS) with both CTEs on `age_group_id`, producing `adjusted_irs = irs × prior_injury_multiplier × position_age_factor` for each athlete-day row. The Metabase cards then use `vw_adjusted_irs_with_position`, which keeps the age-group benchmark logic but adds a stable demonstration position group and age-position injury-rate factor for filters and scenario analysis.
 
 ## Results
 
@@ -432,16 +432,16 @@ IRS distribution across 15,420 session-days (raw `fact_load_metrics`):
 | Underloaded | 1,452 | 9% |
 | Caution | 1,437 | 9% |
 
-Adjusted IRS distribution (11,208 rows with full chronic window):
+Adjusted IRS distribution in the live Metabase dashboard view (6,619 scored athlete-days):
 
 | Risk Band | Session-days | Share |
 |---|---|---|
-| Caution | 4,103 | 37% |
-| Optimal | 2,304 | 21% |
-| Underloaded | 113 | 1% |
-| High Risk | 99 | 1% |
+| Caution | 3,272 | 49% |
+| Optimal | 1,987 | 30% |
+| Underloaded | 1,242 | 19% |
+| High Risk | 118 | 2% |
 
-The shift from raw to adjusted — notably from Optimal to Caution — reflects the prior injury multiplier elevating scores for age groups with higher historical injury burden. The 21–24 age group drives most High Risk rows (athlete 79, adjusted IRS up to 2.45 in late February 2024).
+The shift from raw to adjusted — notably from Optimal to Caution — reflects the benchmark multipliers elevating scores for groups with higher historical injury burden or age-position injury exposure. The 21–24 age group drives most High Risk rows; in the dashboard example, athlete 79 reaches an adjusted IRS of 2.267 on 2024-02-28.
 
 # Efficiency & Query Performance {#sec-Efficiency}
 
@@ -449,18 +449,21 @@ The shift from raw to adjusted — notably from Optimal to Caution — reflects 
 
 The IRS rolling window query scans `fact_training_session` (15,420 rows) and joins to `dim_date` to establish a date-ordered partition per athlete. Without indexes, MySQL performs full table scans on each join.
 
-*[Run `EXPLAIN ANALYZE` on 40_irs_rolling_window.sql and insert output here]*
+On the current VM database the rolling query operates on a relatively small teaching dataset, but the access pattern is still important: the workload fact table contains 15,420 rows and the window calculation must order observations within each athlete history. A non-destructive metadata check showed that the optimization script is present in the repository, but the VM database currently only exposes `idx_bpt_team` among the expected optimization indexes. The IRS query therefore remains a good candidate for applying `sql/05_optimization/51_create_indexes.sql` before the final performance measurement.
 
 ## Optimization Approach 1: Composite Index on (mm_athlete_id, date_id)
 
 The window function partitions on `mm_athlete_id` and orders by `date_id`. A composite index on `fact_training_session(mm_athlete_id, date_id)` allows MySQL to satisfy both the partition and the ordering without a filesort. The same index supports the JOIN in `fact_load_metrics`.
 
 ```sql
-CREATE INDEX IF NOT EXISTS idx_ts_athlete_date
-    ON fact_training_session (mm_athlete_id, date_id);
+CALL create_index_if_missing(
+    'fact_training_session',
+    'idx_ts_athlete_date',
+    '`mm_athlete_id`, `date_id`'
+);
 ```
 
-*[Insert EXPLAIN output before and after index — show rows scanned reduction]*
+The index creation script defines this index idempotently through `create_index_if_missing`. It should be applied on the VM before collecting the final before/after `EXPLAIN ANALYZE` screenshots, because dropping and recreating indexes during report writing would modify the shared database state.
 
 ## Optimization Approach 2: Materialized IRS Table (fact_load_metrics)
 
@@ -473,40 +476,71 @@ TRUNCATE TABLE fact_load_metrics;
 INSERT INTO fact_load_metrics ... -- same window SELECT
 ```
 
-The dashboard query cost drops from a full window scan of 15,420 rows to a simple range scan with the `idx_lm_band_date` covering index.
+Once the covering index is applied on the VM, the dashboard query should drop from a full scan of `fact_load_metrics` to an indexed range lookup for the selected risk band and date range.
 
 ## Optimization Approach 3: Covering Index for Dashboard Filters
 
 Metabase filters typically combine `risk_band` and a date range. A covering index on `fact_load_metrics(risk_band, date_id)` allows the storage engine to satisfy these queries from the index alone without touching the base table rows:
 
 ```sql
-CREATE INDEX IF NOT EXISTS idx_lm_band_date
-    ON fact_load_metrics (risk_band, date_id);
+CALL create_index_if_missing(
+    'fact_load_metrics',
+    'idx_lm_band_date',
+    '`risk_band`, `date_id`'
+);
 ```
 
 ## Performance Comparison
 
-*[Fill in after running EXPLAIN ANALYZE on the VM]*
+The current VM check confirms the intended optimization target. A dashboard-style filter on `fact_load_metrics` for selected risk bands and a date range still produces a table scan when `idx_lm_band_date` is absent:
 
-| Approach | Rows scanned | Runtime (ms) | Speedup |
-|---|---|---|---|
-| Baseline (no indexes) | tbd | tbd | 1× |
-| + composite index | tbd | tbd | tbd× |
-| + materialized table | tbd | tbd | tbd× |
-| + covering index | tbd | tbd | tbd× |
+```text
+Filter: risk_band IN ('Caution','High Risk') AND date_id BETWEEN ...
+-> Table scan on fact_load_metrics  (cost=1592 rows=15682)
+```
+
+The performance comparison is therefore reported as an implementation plan plus current status rather than as a fabricated benchmark:
+
+| Approach | Current VM status | Expected effect |
+|---|---|---|
+| Baseline analytical query | Runs on 15,420 workload rows | Full window calculation over athlete histories |
+| Composite index on `(mm_athlete_id, date_id)` | Defined in SQL, not yet visible in VM metadata check | Supports athlete/date ordering used by the rolling window |
+| Materialized IRS table `fact_load_metrics` | Present with 15,420 rows | Lets Metabase read prepared IRS rows instead of recomputing ACWR |
+| Covering index on `(risk_band, date_id)` | Defined in SQL, not yet visible in VM metadata check | Should reduce dashboard filter queries from table scan to indexed range lookup |
 
 # Visualization & Decision Support {#sec-Visualization}
 
-## Plan
+Metabase is connected to the `injury_risk_predictor` database hosted on the VM. The project dashboard is published through Metabase public sharing at `http://vm-fs26-019.dbm.ls.eee.intern:3000/public/dashboard/1a79c6a5-de14-450d-b23a-b735c4335cf5` for users on the HSLU network. For decision support the dashboard is organized into three analytical areas: a statistics overview, an observed athlete decision tool, and a hypothetical player scenario tool. Together, these views let users move from population-level injury-risk patterns to athlete-specific interpretation and finally to what-if planning for a new or not-yet-observed player.
 
-Metabase will be connected to `injury_risk_predictor` on the VM with a read-only analytics user. The planned dashboard cards are:
+For the PDF report, Metabase visuals are integrated as static screenshots. Direct live dashboard embedding is possible for an HTML report through Metabase public links or signed embeds, but a PDF submission needs reproducible image exports. The screenshot below was captured from the live public dashboard after verifying the card results through the Metabase API.
 
-1. **Adjusted Risk Ranking** — table of athletes sorted by `adjusted_irs` descending, colour-coded by `adjusted_risk_band`
-2. **IRS over Time** — line chart per athlete from `vw_adjusted_irs_by_age_group`, with reference lines at 1.2 and 2.0
-3. **Injury Type Heatmap** — count of `injury_name` by `age_group_label` from `fact_injury_european`
-4. **Benchmark Comparison** — average `previous_injury_count` and `training_hours_per_week` by position group from `fact_university_benchmark`
+![Live Metabase public dashboard with filters, adjusted risk distribution, athlete table, observed athlete tool, and hypothetical scenario tool.](Pictures/metabase_live_public_dashboard_wide.png){#fig-metabase-live-dashboard width=95%}
 
-*[Metabase setup and screenshots to be added in the final report]*
+## Statistics Dashboard
+
+The statistics dashboard gives a quick overview of the three model components that form the adjusted injury risk score. It is intended for a coach, supervisor, or project reviewer who wants to understand the general risk pattern in the group before focusing on one athlete.
+
+The first component is the raw Injury Risk Score, based on the acute-to-chronic workload ratio. The current database check shows that most raw session-days fall in the `Optimal` band, while 4,212 warm-up rows are labelled `Not enough history` because the 28-session chronic window is not yet complete. The distribution of IRS values is centered close to 1, with a smaller tail toward higher workload spikes.
+
+The second component is the prior injury multiplier. It uses the university benchmark data as an age-group-level factor rather than as an individual-level join. This keeps the data model honest: a multimodal athlete is not claimed to be the same person as a university benchmark player, but the benchmark still contributes useful prior-injury context.
+
+The third component is the position-age factor from the European football injury data. It represents the relationship between an age-position group's injury rate and the overall average injury rate. In the dashboard view, this factor supports contextual comparison and scenario planning rather than individual medical prediction.
+
+After applying the benchmark multipliers, the live dashboard distribution contains 6,619 scored athlete-days: 3,272 `Caution`, 1,987 `Optimal`, 1,242 `Underloaded`, and 118 `High Risk`. The shift from raw `Optimal` toward adjusted `Caution` is expected because prior-injury and age-position context increase the final score for several groups.
+
+## Observed Athlete Decision Tool
+
+The observed athlete decision tool supports a coach or athlete who wants to inspect one anonymous athlete in detail. The table card shows the current components of the adjusted IRS: raw IRS, prior injury multiplier, position-age factor, final adjusted IRS, adjusted risk band, and coach recommendation. The example focuses on anonymous athlete 79, who reaches a `High Risk` classification in late February 2024.
+
+This example is consistent with the live Metabase card result: for athlete 79 on 2024-02-28, the raw IRS is 1.561, the prior-injury multiplier is 1.455, the position-age factor is 0.998, and the adjusted IRS rounds to 2.267. The card classifies the row as `High Risk` and recommends pausing or strongly reducing training load immediately.
+
+The trend chart below the table makes the decision rule easier to interpret over time. For athlete 79, the highest-risk period occurs between late February and early March 2024. Outside that peak, the athlete still frequently sits in `Caution`, which suggests that a coach should monitor workload progression instead of reacting to a single isolated day.
+
+## Hypothetical Player Scenario Tool
+
+The hypothetical player scenario tool addresses a different use case: estimating a benchmark-based risk score before continuous workload monitoring is available for a new athlete. The user can enter a position group, age, gender, previous injury count, acute load, and chronic load. The SQL question then calculates the raw IRS, applies the relevant benchmark factors, assigns an adjusted risk band, and returns a coach-facing recommendation.
+
+In the shown scenario, a 22-year-old female midfielder with one previous injury, acute load 90, and chronic load 60 has a raw IRS of 1.5. With the benchmark multipliers applied, the adjusted IRS is 1.94 and the recommendation is to monitor closely and reduce load slightly. This scenario tool is intentionally framed as decision support, not as a clinical diagnosis.
 
 # Conclusions & Lessons Learned {#sec-Conclusion}
 
@@ -518,9 +552,9 @@ MySQL-specific constraints shaped several design decisions. The absence of nativ
 
 ## What's Still To Do
 
-- Run `EXPLAIN ANALYZE` on the IRS query before and after index creation to produce the three optimization proofs
-- Set up Metabase, connect to VM, build the four planned dashboard cards
-- Merge the `Andrin/InitializingDB-CreatingTables` branch (contains Python preprocessing scripts) into the main branch
+- Apply the optimization index script on the VM and capture final `EXPLAIN ANALYZE` output for the report appendix
+- Confirm whether reviewers will have HSLU network access to the public Metabase link
+- Refresh the static dashboard screenshot if the final Metabase layout changes
 
 ## Use of Artificial Intelligence
 
@@ -546,4 +580,4 @@ Full SQL listings are available in the project repository under `sql/`. The ELT 
 2. `sql/02_load/20_load_staging.sql` — staging load
 3. `sql/03_transform/30_transform_dims_facts.sql` — transform + view
 
-*[Extended EXPLAIN plans and additional dashboard screenshots to be added in final report]*
+Additional SQL listings, Metabase cards, and performance screenshots can be attached here if required by the final submission format.
