@@ -264,6 +264,90 @@ JOIN dim_date d                ON d.date_id        = lm.date_id
 LEFT JOIN university_factor uf ON uf.age_group_id  = a.age_group_id
 LEFT JOIN european_factor ef   ON ef.age_group_id  = a.age_group_id;
 
+-- vw_adjusted_irs_with_position: dashboard view used by Metabase.
+-- The multimodal workload source has no observed player position. To support
+-- dashboard position filters without inventing a cross-source player match,
+-- anonymous athletes receive a stable demonstration position group based on
+-- mm_athlete_id modulo four. Position-sensitive interpretations are therefore
+-- benchmark/scenario support, not observed athlete position facts.
+CREATE OR REPLACE VIEW vw_adjusted_irs_with_position AS
+WITH base AS (
+    SELECT
+        v.load_metrics_id,
+        v.mm_athlete_id,
+        v.age_group_id,
+        v.age_group_label,
+        v.date_id,
+        v.full_date,
+        v.session_load,
+        v.acute_load_7,
+        v.chronic_load_28,
+        v.irs,
+        v.prior_injury_multiplier,
+        pg.position_group_id,
+        pg.position_group_code,
+        pg.position_group_name
+    FROM vw_adjusted_irs_by_age_group v
+    JOIN dim_position_group pg
+      ON pg.position_group_id = CASE
+          WHEN v.mm_athlete_id % 4 = 0 THEN 1
+          WHEN v.mm_athlete_id % 4 = 1 THEN 2
+          WHEN v.mm_athlete_id % 4 = 2 THEN 3
+          ELSE 4
+      END
+),
+european_profile_rates AS (
+    SELECT
+        p.age_group_id,
+        p.position_group_id,
+        COUNT(i.injury_id) / NULLIF(COUNT(DISTINCT p.eu_player_id), 0) AS profile_injury_rate
+    FROM dim_player_european p
+    LEFT JOIN bridge_player_team b  ON b.eu_player_id = p.eu_player_id
+    LEFT JOIN fact_injury_european i ON i.bridge_id   = b.bridge_id
+    GROUP BY p.age_group_id, p.position_group_id
+),
+european_avg_rate AS (
+    SELECT COUNT(i.injury_id) / NULLIF(COUNT(DISTINCT p.eu_player_id), 0) AS avg_injury_rate
+    FROM dim_player_european p
+    LEFT JOIN bridge_player_team b  ON b.eu_player_id = p.eu_player_id
+    LEFT JOIN fact_injury_european i ON i.bridge_id   = b.bridge_id
+),
+scored AS (
+    SELECT
+        b.*,
+        epr.profile_injury_rate / NULLIF(ear.avg_injury_rate, 0) AS position_age_factor
+    FROM base b
+    LEFT JOIN european_profile_rates epr
+      ON epr.age_group_id = b.age_group_id
+     AND epr.position_group_id = b.position_group_id
+    CROSS JOIN european_avg_rate ear
+)
+SELECT
+    scored.load_metrics_id,
+    scored.mm_athlete_id,
+    scored.age_group_id,
+    scored.age_group_label,
+    scored.date_id,
+    scored.full_date,
+    scored.session_load,
+    scored.acute_load_7,
+    scored.chronic_load_28,
+    scored.irs,
+    scored.prior_injury_multiplier,
+    scored.position_age_factor,
+    scored.irs * scored.prior_injury_multiplier * scored.position_age_factor AS adjusted_irs,
+    CASE
+        WHEN scored.irs IS NULL                                                               THEN 'Not enough history'
+        WHEN scored.irs * scored.prior_injury_multiplier * scored.position_age_factor >= 2.0 THEN 'High Risk'
+        WHEN scored.irs * scored.prior_injury_multiplier * scored.position_age_factor >= 1.2 THEN 'Caution'
+        WHEN scored.irs * scored.prior_injury_multiplier * scored.position_age_factor >= 0.8 THEN 'Optimal'
+        ELSE 'Underloaded'
+    END AS adjusted_risk_band,
+    scored.position_group_id,
+    scored.position_group_code,
+    scored.position_group_name
+FROM scored;
+
 -- row count check
 SELECT 'dim_age_group'        AS tbl, COUNT(*) AS n FROM dim_age_group
 UNION ALL SELECT 'dim_position_group',  COUNT(*) FROM dim_position_group
