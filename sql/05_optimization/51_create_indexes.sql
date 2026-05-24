@@ -40,11 +40,11 @@ CALL create_index_if_missing(
     '`mm_athlete_id`, `date_id`'
 );
 
--- composite: injury lookups by bridge + date
+-- composite: injury lookups by player + date
 CALL create_index_if_missing(
     'fact_injury_european',
-    'idx_inj_bridge_date',
-    '`bridge_id`, `date_id`'
+    'idx_inj_player_date',
+    '`eu_player_id`, `date_id`'
 );
 
 -- bridge lookups by team; usually already defined inline in the DDL
