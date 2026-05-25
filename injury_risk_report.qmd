@@ -593,6 +593,10 @@ Designing around three datasets with no shared player identifier forced a delibe
 
 MySQL-specific constraints shaped several design decisions. The absence of native materialized views led us to use `fact_load_metrics` as a pre-computed summary table refreshed via TRUNCATE + INSERT. The `LOAD DATA LOCAL INFILE` path sensitivity and the requirement to enable `local_infile` on the server side added friction during initial data loading.
 
+## Performance and Indexing
+
+The theoretical concepts of database optimization became tangible through the performance measurements conducted during this project. A key finding is that well-designed and strategically applied indexes can substantially reduce query execution times. This effect was particularly evident in the dashboard filtering process, where an inefficient table scan was replaced by an index range scan following the implementation of appropriate indexes. The results demonstrate the critical role of composite and covering indexes in enhancing query performance and ensuring a responsive user experience in a production environment.
+
 ## What's Still To Do
 
 - Confirm whether reviewers will have HSLU network access to the public Metabase link
