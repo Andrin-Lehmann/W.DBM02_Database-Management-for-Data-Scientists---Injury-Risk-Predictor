@@ -496,21 +496,45 @@ CALL create_index_if_missing(
 
 ## Performance Comparison
 
-The current VM check confirms the intended optimization target. A dashboard-style filter on `fact_load_metrics` for selected risk bands and a date range still produces a table scan when `idx_lm_band_date` is absent:
+Following the creation of the indexes, their successful deployment was verified.
+To demonstrate the effectiveness of the optimization measures, the execution plans of the most relevant queries were compared before and after indexing using EXPLAIN ANALYZE. The most significant improvement was observed for queries against the fact_load_metrics table, which serves as the primary data source for filtering operations within the Metabase dashboard.
 
+Analyzed Query:
+
+```sql
+SELECT * FROM fact_load_metrics 
+WHERE risk_band IN ('Caution', 'High Risk') 
+AND date_id BETWEEN 20240200 AND 20240400;
+```
+- **Before optimization**: The execution plan revealed an inefficient table scan on the fact_load_metrics table. The actual execution time of the scan was approximately 126 ms, with an additional 126 ms required for filtering operations.
 ```text
-Filter: risk_band IN ('Caution','High Risk') AND date_id BETWEEN ...
--> Table scan on fact_load_metrics  (cost=1592 rows=15682)
+Filter: ((fact_load_metrics.risk_band in ('Caution','High Risk')) and
+ (fact_load_metrics.date_id between 20240200 and 20240400)) 
+ (cost=1576 rows=1872) (actual time=1.52..252 rows=1232 loops=1)
+    -> Table scan on fact_load_metrics  (cost=1576 rows=15520)
+       (actual time=0.574..126 rows=15420 loops=1)
 ```
 
-The performance comparison is therefore reported as an implementation plan plus current status rather than as a fabricated benchmark:
+- **After optimization**: Following the implementation of the covering index idx_lm_band_date, the execution plan changed to a highly efficient index range scan. As a result, the execution time was reduced substantially to approximately 15.2 ms.
+```text
+Index range scan on fact_load_metrics using idx_lm_band_date over
+ (risk_band = 'Caution' AND 20240200 <= date_id <= 20240400) OR
+ (risk_band = 'High Risk' AND 20240200 <= date_id <= 20240400),
+ with index condition: ((fact_load_metrics.risk_band in ('Caution','High Risk')) and
+ (fact_load_metrics.date_id between 20240200 and 20240400)) 
+ (cost=555 rows=1233) (actual time=0.663..15.2 rows=1232 loops=1)
+```
 
-| Approach | Current VM status | Expected effect |
-|---|---|---|
-| Baseline analytical query | Runs on 15,420 workload rows | Full window calculation over athlete histories |
-| Composite index on `(mm_athlete_id, date_id)` | Defined in SQL, not yet visible in VM metadata check | Supports athlete/date ordering used by the rolling window |
-| Materialized IRS table `fact_load_metrics` | Present with 15,420 rows | Lets Metabase read prepared IRS rows instead of recomputing ACWR |
-| Covering index on `(risk_band, date_id)` | Defined in SQL, not yet visible in VM metadata check | Should reduce dashboard filter queries from table scan to indexed range lookup |
+The performance comparison is therefore reported with the following table, which provides an overview of the measured performance improvements achieved across several system components:
+
+| Query Target | Execution Plan (Before Optimization) | Execution Time (Before Optimization) | Execution Plan (After Optimization) | Execution Time (After Optimization) |
+|---|---|---|---|---|
+| fact_load_metrics | Table scan | 126 ms | Index range scan | 15.2 ms |
+| fact_training_session | Index range scan | 26.7 ms | Index range scan | 13.2 ms |
+| bridge_player_team | Covering index scan | 75.2 ms | Index range scan | 26.5 ms |
+| fact_injury_european | Index range scan | 2.21 ms | Index range scan | 26.5 ms |
+
+Further queries used to assess the impact of the optimization measures, along with the resulting execution times, are documented in the Appendix.
 
 ## Database Cleanup
 As part of the database cleanup process, the temporary table tmp_multimodal_prepared, which had been used for the initial handling of null values and the generation of synthetic data, was permanently removed from the virtual machine using a DROP TABLE operation. This approach follows established best practices for ETL/ELT pipelines, ensuring that storage resources are reclaimed once data transformations have been completed and that the relational data model remains free of redundant staging artifacts.
@@ -586,7 +610,117 @@ Full SQL listings are available in the project repository under `sql/`. The ELT 
 1. `sql/01_schema/01_create_tables.sql` — DDL
 2. `sql/02_load/20_load_staging.sql` — staging load
 3. `sql/03_transform/30_transform_dims_facts.sql` — transform + view
-3. `sql/04_transform/51_create_indexes.sql` — indexing
-3. `sql/05_transform/52_materialized_irs.sql` — materialized IRS table
 
 Additional SQL listings, Metabase cards, and performance screenshots can be attached here if required by the final submission format.
+
+1. `sql/04_transform/51_create_indexes.sql` — indexing
+2. `sql/05_transform/52_materialized_irs.sql` — materialized IRS table
+
+## Performance measure:
+
+### Index on fact_load_metrics:
+
+```sql
+EXPLAIN ANALYZE 
+SELECT * FROM fact_load_metrics 
+WHERE risk_band IN ('Caution', 'High Risk') 
+AND date_id BETWEEN 20240200 AND 20240400;
+```
+
+Before:
+```text
+Filter: ((fact_load_metrics.risk_band in ('Caution','High Risk')) and
+ (fact_load_metrics.date_id between 20240200 and 20240400)) 
+ (cost=1576 rows=1872) (actual time=1.52..252 rows=1232 loops=1)
+    -> Table scan on fact_load_metrics  (cost=1576 rows=15520)
+    (actual time=0.574..126 rows=15420 loops=1)
+```
+
+After:
+```text
+Index range scan on fact_load_metrics using idx_lm_band_date over
+ (risk_band = 'Caution' AND 20240200 <= date_id <= 20240400) OR
+ (risk_band = 'High Risk' AND 20240200 <= date_id <= 20240400),
+ with index condition: ((fact_load_metrics.risk_band in ('Caution','High Risk')) and
+ (fact_load_metrics.date_id between 20240200 and 20240400)) 
+ (cost=555 rows=1233) (actual time=0.663..15.2 rows=1232 loops=1)
+```
+
+### Index on fact_training_session:
+
+```sql
+EXPLAIN ANALYZE
+SELECT * FROM fact_training_session
+WHERE mm_athlete_id BETWEEN 100 AND 120
+AND date_id BETWEEN 20240200 AND 20240400;
+```
+
+Before:
+```text
+Filter: (fact_training_session.date_id between 20240200 and 20240400) 
+ (cost=935 rows=1278) (actual time=1.22..56.2 rows=1260 loops=1)
+    -> Index range scan on fact_training_session using mm_athlete_id over
+       (100 <= mm_athlete_id <= 120),
+       with index condition: (fact_training_session.mm_athlete_id between 100 and 120) 
+       (cost=935 rows=2077) (actual time=0.644..26.7 rows=2077 loops=1)
+```
+
+After:
+```text
+Index range scan on fact_training_session using idx_ts_athlete_date over
+ (100 <= mm_athlete_id <= 120 AND 20240200 <= date_id <= 20240400),
+ with index condition: ((fact_training_session.mm_athlete_id between 100 and 120) and
+ (fact_training_session.date_id between 20240200 and 20240400)) 
+ (cost=916 rows=2036) (actual time=0.621..13.2 rows=1260 loops=1)
+```
+
+### Index on fact_injury_european:
+
+```sql
+EXPLAIN ANALYZE
+SELECT * FROM fact_injury_european
+where eu_player_id between 3000 and 4000 and
+date_id BETWEEN 20240200 AND 20240400;
+```
+
+Before:
+```text
+Filter: (fact_injury_european.date_id between 20240200 and 20240400) 
+ (cost=114 rows=116) (actual time=0.189..4.71 rows=120 loops=1)
+    -> Index range scan on fact_injury_european using eu_player_id over
+       (3000 <= eu_player_id <= 4000),
+       with index condition: (fact_injury_european.eu_player_id between 3000 and 4000) 
+       (cost=114 rows=190) (actual time=0.131..2.21 rows=190 loops=1)
+```
+
+After:
+```text
+Index range scan on fact_injury_european using idx_inj_player_date over
+ (3000 <= eu_player_id <= 4000 AND 20240200 <= date_id <= 20240400),
+ with index condition: ((fact_injury_european.eu_player_id between 3000 and 4000) and
+ (fact_injury_european.date_id between 20240200 and 20240400)) 
+ (cost=85.8 rows=190) (actual time=0.113..1.4 rows=120 loops=1)
+```
+
+### Index on bridge_player_team:
+
+```sql
+EXPLAIN ANALYZE
+SELECT * FROM bridge_player_team
+where team_id BETWEEN 1 AND 30;
+```
+
+Before:
+```text
+Filter: (bridge_player_team.team_id between 1 and 30) 
+ (cost=880 rows=1997) (actual time=0.335..162 rows=1997 loops=1)
+    -> Covering index scan on bridge_player_team using uq_player_team_season 
+       (cost=880 rows=8570) (actual time=0.303..75.2 rows=8645 loops=1)
+```
+
+After:
+```text
+Index range scan on bridge_player_team using idx_bpt_team over (1 <= team_id <= 30),
+ with index condition: (bridge_player_team.team_id between 1 and 30) 
+ (cost=1035 rows=1997) (actual time=0.565..26.5 rows=1997 loops=1)
+```
