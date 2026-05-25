@@ -573,6 +573,18 @@ The hypothetical player scenario tool addresses a different use case: estimating
 
 In the shown scenario, a 22-year-old female midfielder with one previous injury, acute load 90, and chronic load 60 has a raw IRS of 1.5. With the benchmark multipliers applied, the adjusted IRS is 1.94 and the recommendation is to monitor closely and reduce load slightly. This scenario tool is intentionally framed as decision support, not as a clinical diagnosis.
 
+## Reconciliation
+
+SQL output and Metabase visualization match exactly, so the dashboard is a faithful representation of the database query result.
+
+| Risk Band | SQL Result (Rows) | Metabase (Rows) |
+|---|---|---|
+| Caution | 3,272 | 3,272 |
+| Optimal | 1,987 | 1,987 |
+| Underloaded | 1,242 | 1,242 |
+| High Risk | 118 | 118 |
+| Total scored | 6,619 | 6,619 |
+
 # Conclusions & Lessons Learned {#sec-Conclusion}
 
 ## Working with the Database
@@ -583,13 +595,12 @@ MySQL-specific constraints shaped several design decisions. The absence of nativ
 
 ## What's Still To Do
 
-- Apply the optimization index script on the VM and capture final `EXPLAIN ANALYZE` output for the report appendix
 - Confirm whether reviewers will have HSLU network access to the public Metabase link
 - Refresh the static dashboard screenshot if the final Metabase layout changes
 
 ## Use of Artificial Intelligence
 
-Claude Code (Anthropic) was used throughout the project for schema design review, SQL query development, ELT script writing, and report drafting. OpenAI Codex was used for cross-checking SQL logic. All generated SQL was reviewed, tested against the live database, and adapted by the team before committing.
+Claude Code (Anthropic) and Gemini were used throughout the project for schema design review, SQL query development, ELT script writing, and report drafting. OpenAI Codex was used for cross-checking SQL logic. All generated SQL was reviewed, tested against the live database, and adapted by the team before committing.
 
 # References {.unnumbered}
 
