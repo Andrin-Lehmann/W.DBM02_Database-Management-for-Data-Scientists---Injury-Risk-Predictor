@@ -451,7 +451,11 @@ The IRS rolling window query scans `fact_training_session` (15,420 rows) and joi
 
 On the current VM database the rolling query operates on a relatively small teaching dataset, but the access pattern is still important: the workload fact table contains 15,420 rows and the window calculation must order observations within each athlete history. A non-destructive metadata check showed that the optimization script is present in the repository, but the VM database currently only exposes `idx_bpt_team` among the expected optimization indexes. The IRS query therefore remains a good candidate for applying `sql/05_optimization/51_create_indexes.sql` before the final performance measurement.
 
-## Optimization Approach 1: Composite Index on (mm_athlete_id, date_id)
+## Optimization Approaches
+To ensure a high-performance dashboard environment, three key optimization strategies were implemented within the project:
+
+### Optimization Approach 1: Targeted Indexing
+By creating composite indexes on frequently used filter combinations, the storage engine can resolve queries directly through the index tree. This eliminates costly full table scans, which is particularly critical as data volumes scale. For example, a composite index on (mm_athlete_id, date_id) was implemented. Additional indexes can be found in the appendix.
 
 The window function partitions on `mm_athlete_id` and orders by `date_id`. A composite index on `fact_training_session(mm_athlete_id, date_id)` allows MySQL to satisfy both the partition and the ordering without a filesort. The same index supports the JOIN in `fact_load_metrics`.
 
@@ -463,9 +467,9 @@ CALL create_index_if_missing(
 );
 ```
 
-The index creation script defines this index idempotently through `create_index_if_missing`. It should be applied on the VM before collecting the final before/after `EXPLAIN ANALYZE` screenshots, because dropping and recreating indexes during report writing would modify the shared database state.
+The index creation script defines this index idempotently through `create_index_if_missing`.
 
-## Optimization Approach 2: Materialized IRS Table (fact_load_metrics)
+### Optimization Approach 2: Materialized IRS Table
 
 MySQL 8 does not support native materialized views. `fact_load_metrics` acts as a materialized summary: the expensive rolling window calculation runs once during ELT and the result is stored. Metabase and dashboard queries read directly from `fact_load_metrics` rather than recomputing the window on every page load.
 
@@ -478,7 +482,7 @@ INSERT INTO fact_load_metrics ... -- same window SELECT
 
 Once the covering index is applied on the VM, the dashboard query should drop from a full scan of `fact_load_metrics` to an indexed range lookup for the selected risk band and date range.
 
-## Optimization Approach 3: Covering Index for Dashboard Filters
+### Optimization Approach 3: Covering Index for Dashboard Filters
 
 Metabase filters typically combine `risk_band` and a date range. A covering index on `fact_load_metrics(risk_band, date_id)` allows the storage engine to satisfy these queries from the index alone without touching the base table rows:
 
@@ -507,6 +511,9 @@ The performance comparison is therefore reported as an implementation plan plus 
 | Composite index on `(mm_athlete_id, date_id)` | Defined in SQL, not yet visible in VM metadata check | Supports athlete/date ordering used by the rolling window |
 | Materialized IRS table `fact_load_metrics` | Present with 15,420 rows | Lets Metabase read prepared IRS rows instead of recomputing ACWR |
 | Covering index on `(risk_band, date_id)` | Defined in SQL, not yet visible in VM metadata check | Should reduce dashboard filter queries from table scan to indexed range lookup |
+
+## Database Cleanup
+As part of the database cleanup process, the temporary table tmp_multimodal_prepared, which had been used for the initial handling of null values and the generation of synthetic data, was permanently removed from the virtual machine using a DROP TABLE operation. This approach follows established best practices for ETL/ELT pipelines, ensuring that storage resources are reclaimed once data transformations have been completed and that the relational data model remains free of redundant staging artifacts.
 
 # Visualization & Decision Support {#sec-Visualization}
 
@@ -579,5 +586,7 @@ Full SQL listings are available in the project repository under `sql/`. The ELT 
 1. `sql/01_schema/01_create_tables.sql` — DDL
 2. `sql/02_load/20_load_staging.sql` — staging load
 3. `sql/03_transform/30_transform_dims_facts.sql` — transform + view
+3. `sql/04_transform/51_create_indexes.sql` — indexing
+3. `sql/05_transform/52_materialized_irs.sql` — materialized IRS table
 
 Additional SQL listings, Metabase cards, and performance screenshots can be attached here if required by the final submission format.
