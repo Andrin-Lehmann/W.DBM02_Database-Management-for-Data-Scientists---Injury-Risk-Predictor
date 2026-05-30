@@ -597,6 +597,16 @@ MySQL-specific constraints shaped several design decisions. The absence of nativ
 
 The theoretical concepts of database optimization became tangible through the performance measurements conducted during this project. A key finding is that well-designed and strategically applied indexes can substantially reduce query execution times. This effect was particularly evident in the dashboard filtering process, where an inefficient table scan was replaced by an index range scan following the implementation of appropriate indexes. The results demonstrate the critical role of composite and covering indexes in enhancing query performance and ensuring a responsive user experience in a production environment.
 
+## Project organization
+
+At the beginning of the project, the organization worked well because the team jointly defined the use case, selected suitable data sources, and agreed on the general project direction. However, during the implementation phase, coordination became more challenging. All team members had other modules and deadlines in parallel, and we were not always available at the same time in class or online. As a result, communication and prioritization were sometimes difficult.
+For the next project, we learned that a clearer plan at the beginning would be helpful. Responsibilities, deadlines, dependencies, and expected outputs should be defined more explicitly, so that every team member can plan their work better and delays can be identified earlier.
+
+## Teamwork
+
+Overall, the collaboration in the team was positive. Our team was able to combine different strengths, especially in data analysis, SQL implementation, dashboard creation, and report writing. This helped us to complete the different parts of the project successfully.
+At the same time, the project showed that good teamwork requires regular coordination. Since many tasks depended on each other, short check-ins and a shared task overview would have helped to keep everyone aligned. Our main lesson learned is that clearer ownership of tasks and more regular updates would make teamwork more efficient in future projects.
+
 ## What's Still To Do
 
 - Confirm whether reviewers will have HSLU network access to the public Metabase link
