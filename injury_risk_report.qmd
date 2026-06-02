@@ -36,7 +36,7 @@ Andrin Lehmann (andrin.lehmann@stud.hslu.ch)\\
 \vspace{0.2cm}
 Maurice Salzmann (maurice.salzmann@stud.hslu.ch) \\
 \vspace{0.2cm}
-Alina Caspar (alina.caspar@stud.hslu.ch) \\
+Alina Caspar (alina.caspar@hslu.ch) \\
 \vspace{0.2cm}
 Aurora Rigo (aurora.rigo@stud.hslu.ch)
 
