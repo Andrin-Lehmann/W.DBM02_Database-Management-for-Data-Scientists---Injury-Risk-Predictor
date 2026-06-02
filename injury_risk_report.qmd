@@ -19,14 +19,17 @@ editor_options:
 ---
 
 \begin{titlepage}
+\pagenumbering{gobble}
 \thispagestyle{empty}
 \centering
 
-\vspace*{3cm}
+\vspace*{2.5cm}
 
 {\Huge Injury Risk Predictor Dashboard \par}
-\vspace{0.8cm}
-{\Large HSLU -- Module DBM Project Report \par}
+\vspace{0.7cm}
+{\Large Hochschule Luzern (HSLU) \par}
+\vspace{0.35cm}
+{\large W.DBM02\_Database Management for Data Scientists \par}
 \vspace{0.4cm}
 {\large Team AAM \par}
 
@@ -45,11 +48,16 @@ Aurora Rigo (aurora.rigo@stud.hslu.ch)
 \end{titlepage}
 
 \clearpage
-\setcounter{tocdepth}{2}
+\begingroup
+\pagestyle{empty}
+\setcounter{tocdepth}{1}
+\small
 \thispagestyle{empty}
 \tableofcontents
-
 \clearpage
+\endgroup
+
+\pagestyle{plain}
 \pagenumbering{arabic}
 \setcounter{page}{1}
 
@@ -574,7 +582,7 @@ The Metabase configuration used for the dashboard is:
 
 For the PDF report, Metabase visuals are integrated as static screenshots. Direct live dashboard embedding is possible for an HTML report through Metabase public links or signed embeds, but a PDF submission needs reproducible image exports. The screenshot below was captured from the live public dashboard.
 
-![Live Metabase public dashboard with filters, adjusted risk distribution, athlete table, observed athlete tool, and hypothetical scenario tool.](Pictures/metabase_live_public_dashboard_wide.png){#fig-metabase-live-dashboard width=95%}
+![Live Metabase public dashboard with filters, adjusted risk distribution, athlete table, observed athlete tool, and hypothetical scenario tool.](Pictures/metabase_live_public_dashboard_wide.png){#fig-metabase-live-dashboard width=88%}
 
 ## Statistics Dashboard
 
