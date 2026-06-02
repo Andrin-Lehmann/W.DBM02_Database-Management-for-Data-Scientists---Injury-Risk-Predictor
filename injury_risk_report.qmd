@@ -10,6 +10,9 @@ format:
   pdf:
     fontsize: 10pt
     colorlinks: true
+    include-in-header:
+      text: |
+        \usepackage{pdflscape}
     highlight-style: tango
     code-line-numbers: true
     fig-pos: H
@@ -218,7 +221,7 @@ Because no universal player identifier exists across sources, the model uses **c
 
 ## Conceptual Model
 
-The schema separates into three source-specific subject areas connected by two shared conformed dimensions.
+The schema separates into three source-specific subject areas (S1 Multimodal, S2 European, S3 University) connected by two shared conformed dimensions.
 
 **Entities:**
 
@@ -242,7 +245,16 @@ The schema separates into three source-specific subject areas connected by two s
 - `bridge_player_team` → `fact_injury_european` (1:N)
 - All three player/athlete dims → `dim_age_group` (N:1)
 
-![Entity relationship diagram of the injury risk predictor schema.](Pictures/erd_injury_risk_predictor.png){#fig-erd width=95%}
+\clearpage
+\begin{landscape}
+\begin{figure}[p]
+\centering
+\includegraphics[width=0.78\paperheight,height=0.72\paperwidth,keepaspectratio]{docs/erd_v4.png}
+\caption{Entity relationship diagram of the injury risk predictor schema.}
+\label{fig-erd}
+\end{figure}
+\end{landscape}
+\clearpage
 
 ## Physical Database Schema in DDL
 
