@@ -50,8 +50,10 @@ Aurora Rigo (aurora.rigo@stud.hslu.ch)
 \clearpage
 \begingroup
 \pagestyle{empty}
-\setcounter{tocdepth}{1}
-\small
+\setcounter{tocdepth}{2}
+\footnotesize
+\setlength{\parskip}{0pt}
+\renewcommand{\baselinestretch}{0.92}\selectfont
 \thispagestyle{empty}
 \tableofcontents
 \clearpage
