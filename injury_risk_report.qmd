@@ -591,7 +591,7 @@ The Metabase configuration used for the dashboard is:
 | MySQL host in Metabase configuration | `localhost:3306` |
 | Database | `injury_risk_predictor` |
 | Dashboard access | Metabase public dashboard link on the HSLU network |
-| Dashboard URL | \href{http://vm-fs26-019.dbm.ls.eee.intern:3000/public/dashboard/1a79c6a5-de14-450d-b23a-b735c4335cf5}{Public Metabase dashboard} |
+| Dashboard URL | \href{http://vm-fs26-019.dbm.ls.eee.intern:3000/public/dashboard/1a79c6a5-de14-450d-b23a-b735c4335cf5}{\texttt{http://vm-fs26-019.dbm.ls.eee.intern:3000/}}<br>\href{http://vm-fs26-019.dbm.ls.eee.intern:3000/public/dashboard/1a79c6a5-de14-450d-b23a-b735c4335cf5}{\texttt{public/dashboard/1a79c6a5-de14-450d-b23a-b735c4335cf5}} |
 
 ![Metabase database connection settings for the MySQL database `injury_risk_predictor`. Metabase runs on the same VM as MySQL, so the connection host is configured as `localhost`.](Pictures/metabase_proof.jpg){#fig-metabase-proof width=95%}
 
