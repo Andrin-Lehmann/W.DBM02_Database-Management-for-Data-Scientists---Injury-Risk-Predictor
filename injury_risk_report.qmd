@@ -580,7 +580,7 @@ Once the transform pipeline completed, the temporary staging table `tmp_multimod
 
 # Visualization & Decision Support {#sec-Visualization}
 
-Metabase is connected to the `injury_risk_predictor` database hosted on the VM. The project dashboard is published through Metabase public sharing at `http://vm-fs26-019.dbm.ls.eee.intern:3000/public/dashboard/1a79c6a5-de14-450d-b23a-b735c4335cf5` for users on the HSLU network. For decision support, the dashboard is organized into three areas: a statistics overview, an observed athlete decision tool, and a hypothetical player scenario tool. This structure takes users from a population-level overview down to individual athlete inspection and, finally, scenario planning for players not yet in the system.
+Metabase is connected to the `injury_risk_predictor` database hosted on the VM. The project dashboard is published through a Metabase public sharing link for users on the HSLU network. For decision support, the dashboard is organized into three areas: a statistics overview, an observed athlete decision tool, and a hypothetical player scenario tool. This structure takes users from a population-level overview down to individual athlete inspection and, finally, scenario planning for players not yet in the system.
 
 The Metabase configuration used for the dashboard is:
 
