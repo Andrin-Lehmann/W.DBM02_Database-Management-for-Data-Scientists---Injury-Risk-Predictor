@@ -258,7 +258,7 @@ The schema separates into three source-specific subject areas (S1 Multimodal, S2
 
 ## Physical Database Schema in DDL
 
-The full DDL is in `sql/01_schema/01_create_tables.sql`. Key design decisions:
+The physical schema was implemented through DDL statements with the following key design decisions:
 
 ### Primary Keys
 
@@ -289,7 +289,7 @@ The schema is in 3NF: every non-key attribute depends on the whole primary key a
 
 ## Loading Logic
 
-Following the ELT principle, each of the three source CSVs is first loaded unchanged into an all-TEXT staging table using `LOAD DATA LOCAL INFILE`. No type enforcement or business logic is applied at load time. All transformations (type casting, NaN handling, key generation, position mapping, rolling load computation) are performed inside MySQL via `INSERT ... SELECT` statements in `sql/03_transform/30_transform_dims_facts.sql`.
+Following the ELT principle, each of the three source CSVs is first loaded unchanged into an all-TEXT staging table using `LOAD DATA LOCAL INFILE`. No type enforcement or business logic is applied at load time. All transformations (type casting, NaN handling, key generation, position mapping, rolling load computation) are performed inside MySQL via `INSERT ... SELECT` statements.
 
 ## Rationale for ELT over ETL
 
@@ -406,7 +406,7 @@ After running the full ELT pipeline:
 
 ## The IRS Query
 
-The main analytical query in `sql/04_analytics/40_irs_rolling_window.sql` computes, for each athlete and session-day, the acute load, chronic load, IRS, and risk band. It uses the following SQL constructs:
+The main analytical query computes, for each athlete and session-day, the acute load, chronic load, IRS, and risk band. It uses the following SQL constructs:
 
 1. **WITH (CTE)**: `daily_load` isolates raw load per athlete-day; `rolling` computes the window aggregates
 2. **WINDOW FUNCTION** (`AVG() OVER (... ROWS BETWEEN)`): rolling 7- and 28-session averages partitioned by athlete
@@ -473,7 +473,7 @@ The shift from raw to adjusted, most notably from Optimal to Caution, reflects t
 
 The IRS rolling window query scans `fact_training_session` (15,420 rows) and joins to `dim_date` to establish a date-ordered partition per athlete. Without indexes, MySQL performs full table scans on each join.
 
-On the current VM database the rolling query operates on a relatively small teaching dataset, but the access pattern is still important: the workload fact table contains 15,420 rows and the window calculation must order observations within each athlete history. Before the final optimization run, the VM exposed the default single-column indexes and `idx_bpt_team`, but not the three composite indexes used for dashboard and analytical filtering. The final measurements below therefore compare the same representative queries before and after applying `sql/05_optimization/51_create_indexes.sql` on the VM.
+On the current VM database the rolling query operates on a relatively small teaching dataset, but the access pattern is still important: the workload fact table contains 15,420 rows and the window calculation must order observations within each athlete history. Before the final optimization run, the VM exposed the default single-column indexes and `idx_bpt_team`, but not the three composite indexes used for dashboard and analytical filtering. The final measurements below therefore compare the same representative queries before and after applying the final composite index set on the VM.
 
 ## Optimization Approaches
 
@@ -591,6 +591,7 @@ The Metabase configuration used for the dashboard is:
 | MySQL host in Metabase configuration | `localhost:3306` |
 | Database | `injury_risk_predictor` |
 | Dashboard access | Metabase public dashboard link on the HSLU network |
+| Dashboard URL | \href{http://vm-fs26-019.dbm.ls.eee.intern:3000/public/dashboard/1a79c6a5-de14-450d-b23a-b735c4335cf5}{Public Metabase dashboard} |
 
 ![Metabase database connection settings for the MySQL database `injury_risk_predictor`. Metabase runs on the same VM as MySQL, so the connection host is configured as `localhost`.](Pictures/metabase_proof.jpg){#fig-metabase-proof width=95%}
 
@@ -684,13 +685,13 @@ Kaggle (n.d.). *University Football Injury Prediction Dataset.* <https://www.kag
 
 # Appendix {.unnumbered}
 
-Full SQL listings are available in the project repository under `sql/`. The ELT and optimization pipeline runs in five steps:
+The ELT and optimization pipeline runs in five reproducible steps:
 
-1. `sql/01_schema/01_create_tables.sql`: DDL
-2. `sql/02_load/20_load_staging.sql`: staging load
-3. `sql/03_transform/30_transform_dims_facts.sql`: transform + view
-4. `sql/05_optimization/51_create_indexes.sql`: optimization indexes
-5. `sql/05_optimization/52_materialized_irs.sql`: materialized IRS refresh
+1. DDL schema creation
+2. Staging load
+3. Dimension, fact, and view transformation
+4. Optimization index creation
+5. Materialized IRS refresh
 
 ## Performance measure
 
