@@ -27,6 +27,8 @@ editor_options:
 {\Huge Injury Risk Predictor Dashboard \par}
 \vspace{0.8cm}
 {\Large HSLU -- Module DBM Project Report \par}
+\vspace{0.4cm}
+{\large Team AAM \par}
 
 \vspace{3cm}
 
@@ -55,13 +57,13 @@ Aurora Rigo (aurora.rigo@stud.hslu.ch)
 
 Soft-tissue injuries in professional football cost clubs an estimated €500M per season in lost wages and medical costs, with hamstring strains alone accounting for more than 15% of all time-loss injuries. A growing body of sports-science literature (Gabbett, 2016; Hulin et al., 2016) shows that a disproportionate spike in acute training load relative to chronically accumulated fitness is a leading predictor of non-contact injuries. Yet most clubs still rely on subjective session-RPE or on proprietary black-box wearable dashboards that coaches cannot interrogate.
 
-The primary objective of this project is to demonstrate core database management concepts. Using a football injury prevention context as an illustrative setting, we design a relational data model, implement it in MySQL, and integrate three independent data sources using an ELT approach. SQL is then used to derive the Acute-to-Chronic Workload Ratio (ACWR) - our injury risk key figure - and apply a published decision rule in an interactive Metabase dashboard.
+The primary objective of this project is to demonstrate core database management concepts. Using football injury prevention as an illustrative context, we design a relational data model, implement it in MySQL, and integrate three independent data sources using an ELT approach. SQL is then used to derive the Acute-to-Chronic Workload Ratio (ACWR) - our injury risk key figure - and apply a published decision rule in an interactive Metabase dashboard.
 
 Following the OECD Data Value Cycle from the lecture, raw data is transformed into structured information and decision-relevant metrics. Workload telemetry, injury event records, and player features are combined and aggregated at the player-day level, and finally visualized with an interactive Metabase dashboard. This enables parameterized analysis and the application of a mathematically defined decision rule to support transparent, evidence-based load management decisions for a football coach.
 
 # Project Idea & Use Case {#sec-ProjectIdea}
 
-Our *Injury Risk Predictor Dashboard* project aims to support data-driven load management decisions by combining workload telemetry, injury event history, and static player features. A football coach or sports scientist faces the challenge of *deciding which players to rest or whose training load to reduce* during the weekly microcycle. Our database and dashboard create value by enabling coaches to identify players whose current workload profile places them at elevated injury risk, based on quantitative and objective metrics. For this purpose we integrate three complementary data perspectives:
+Our *Injury Risk Predictor Dashboard* project aims to support data-driven load management decisions by combining workload telemetry, injury event history, and static player features. A football coach or sports scientist faces the challenge of *deciding which players to rest or whose training load to reduce* during the weekly microcycle. Our database and dashboard create value by enabling coaches to identify players whose current workload profile places them at elevated injury risk, based on quantitative and objective metrics. For this purpose, we integrate three complementary data perspectives:
 
 1.  **Workload telemetry**: daily session load, training intensity, duration, fatigue index
 2.  **Injury event history**: recorded injuries with type, severity, absence duration
@@ -69,7 +71,7 @@ Our *Injury Risk Predictor Dashboard* project aims to support data-driven load m
 
 ## Data Sources
 
-To keep the project focused on the core learning objectives of this module we deliberately rely on publicly available datasets from Kaggle and sports-science research repositories. These datasets are well-structured and widely cited in the injury-prediction literature. For the purpose of this project as a proof of concept they are suitable, but for any production-level application, live data from a club's wearable provider (Catapult, STATSports) would need to be integrated.
+To keep the project focused on the core learning objectives of this module, we deliberately rely on publicly available datasets from Kaggle and sports-science research repositories. These datasets are well-structured and widely cited in the injury-prediction literature. For the purpose of this project as a proof of concept they are suitable, but for any production-level application, live data from a club's wearable provider (Catapult, STATSports) would need to be integrated.
 
 **Multimodal Sports Injury Dataset (S1)**
 
@@ -92,7 +94,7 @@ To keep the project focused on the core learning objectives of this module we de
 -   Content: Anonymous player profiles with static biomechanical attributes - `age`, `height_cm`, `weight_kg`, `position`, `training_hours_per_week`, `previous_injury_count`, `injury_next_season` (binary label), and several fitness test scores
 -   Purpose: Benchmark reference for prior injury count multiplier in the adjusted IRS
 
-The three datasets are linked via a composite strategy: the multimodal dataset supplies the workload time-series per athlete, the European dataset provides named player and injury event data, and the university dataset contributes a static benchmark multiplier. All three are connected at aggregate level through the conformed dimensions `dim_age_group` and `dim_position_group`. See @sec-DatabaseModel for the integration logic.
+The three datasets are linked via a composite strategy: the multimodal dataset supplies the workload time-series per athlete, the European dataset provides named player and injury event data, and the university dataset contributes a static benchmark multiplier. All three are connected at aggregate level through the conformed dimensions `dim_age_group` and `dim_position_group`, which avoids claiming row-level identity across independent datasets.
 
 ## Key Figures
 
@@ -123,9 +125,9 @@ $$
 $$
 
 -   **prior\_injury\_multiplier** (S3): $1.0 + 0.3 \times \text{avg\_previous\_injury\_count}$ per age group - captures historical injury burden (Fuller et al., 2006)
--   **position\_age\_factor** (S2): ratio of age-position injury rate to overall average injury rate from the European dataset - captures benchmark-level positional and age-related risk exposure (Ekstrand et al., UEFA Injury Studies)
+-   **position\_age\_factor** (S2): ratio of age-position injury rate to overall average injury rate from the European dataset - captures benchmark-level positional and age-related risk exposure (Ekstrand et al., 2011)
 
-The base adjusted view joins factors at `age_group_id` level - the finest grain at which all three sources can be compared without a shared player identifier. The Metabase dashboard uses an additional view, `vw_adjusted_irs_with_position`, to support position filters and the hypothetical scenario tool. Because the multimodal workload dataset has no observed position field, anonymous athletes receive a stable demonstration position group for dashboard filtering; position-sensitive interpretations are therefore benchmark support, not observed athlete position facts.
+The base adjusted view joins factors at `age_group_id` level - the finest grain at which all three sources can be compared without a shared player identifier. The Metabase dashboard uses an additional view, `vw_adjusted_irs_with_position`, to support position filters and the hypothetical scenario tool. Because the multimodal workload dataset has no observed position field, anonymous athletes receive a stable demonstration position group for dashboard filtering; position-sensitive interpretations are therefore benchmark support, not actual athlete position observations.
 
 ## Decision Rule
 
@@ -250,7 +252,7 @@ All foreign key constraints are enforced at the InnoDB engine level. `FOREIGN_KE
 
 ### Index Strategy
 
-Covered in depth in @sec-Efficiency. Composite indexes on `(mm_athlete_id, date_id)` are the primary optimization target since the rolling window functions partition on athlete and order by date.
+Composite indexes on `(mm_athlete_id, date_id)` are the primary optimization target since the rolling window functions partition on athlete and order by date. The measured impact of this index strategy is discussed in the Efficiency chapter.
 
 ### Third Normal Form Rationale
 
@@ -396,7 +398,7 @@ The main analytical query in `sql/04_analytics/40_irs_rolling_window.sql` comput
 10. **WHERE ... BETWEEN** - date range filter
 11. **ORDER BY / LIMIT** - rank by IRS descending
 
-*(> 20 SQL keywords - satisfies the complexity criterion)*
+Together, these constructs demonstrate the required SQL complexity for the analytical part of the project.
 
 ## Calculating the Adjusted IRS
 
@@ -452,6 +454,7 @@ The IRS rolling window query scans `fact_training_session` (15,420 rows) and joi
 On the current VM database the rolling query operates on a relatively small teaching dataset, but the access pattern is still important: the workload fact table contains 15,420 rows and the window calculation must order observations within each athlete history. Before the final optimization run, the VM exposed the default single-column indexes and `idx_bpt_team`, but not the three composite indexes used for dashboard and analytical filtering. The final measurements below therefore compare the same representative queries before and after applying `sql/05_optimization/51_create_indexes.sql` on the VM.
 
 ## Optimization Approaches
+
 To ensure a high-performance dashboard environment, three key optimization strategies were implemented within the project:
 
 ### Optimization Approach 1: Targeted Indexing
@@ -477,7 +480,7 @@ The index creation script defines this index idempotently through `create_index_
 
 MySQL 8 does not support native materialized views. `fact_load_metrics` acts as a materialized summary: the expensive rolling window calculation runs once during ELT and the result is stored. Metabase and dashboard queries read directly from `fact_load_metrics` rather than recomputing the window on every page load.
 
-In production this table would be refreshed nightly via a MySQL `EVENT` or an external scheduler:
+In production, this table would be refreshed nightly via a MySQL `EVENT` or an external scheduler:
 
 ```sql
 TRUNCATE TABLE fact_load_metrics;
@@ -540,7 +543,7 @@ Index range scan on fact_load_metrics using idx_lm_band_date over
 
 ![DBeaver `EXPLAIN ANALYZE` after optimization, showing an index range scan using `idx_lm_band_date`.](Pictures/performance_after_dbeaver.jpg){#fig-performance-after width=95%}
 
-The performance comparison is therefore reported with the following table, which provides an overview of the measured improvements. The `fact_injury_european` baseline uses the pre-optimization single-column index behavior; the after-plan uses the new composite `idx_inj_bridge_date`.
+The table below summarizes the measured improvements. The `fact_injury_european` baseline uses the pre-optimization single-column index behavior; the after-plan uses the new composite `idx_inj_bridge_date`.
 
 | Query Target | Execution Plan (Before Optimization) | Execution Time (Before Optimization) | Execution Plan (After Optimization) | Execution Time (After Optimization) |
 |---|---|---|---|---|
@@ -548,16 +551,28 @@ The performance comparison is therefore reported with the following table, which
 | fact_training_session | Single-column athlete index + date filter | 54.7 ms | Composite index range scan on `idx_ts_athlete_date` | 17.2 ms |
 | fact_injury_european | Single-column bridge index + date filter | 38.2 ms | Composite index range scan on `idx_inj_bridge_date` | 10.7 ms |
 
-Further queries used to assess the impact of the optimization measures, along with the resulting execution plans, are documented in the Appendix.
+Additional execution-plan outputs are included in the Appendix as supplementary evidence.
 
 ## Database Cleanup
-As part of the database cleanup process, the temporary table tmp_multimodal_prepared, which had been used for the initial handling of null values and the generation of synthetic data, was permanently removed from the virtual machine using a DROP TABLE operation. This approach follows established best practices for ETL/ELT pipelines, ensuring that storage resources are reclaimed once data transformations have been completed and that the relational data model remains free of redundant staging artifacts.
+As part of the database cleanup process, the temporary table tmp_multimodal_prepared, which had been used for the initial handling of null values and the generation of synthetic data, was dropped from the database using a DROP TABLE operation. This approach follows established best practices for ETL/ELT pipelines, ensuring that storage resources are reclaimed once data transformations have been completed and that the relational data model remains free of redundant staging artifacts.
 
 # Visualization & Decision Support {#sec-Visualization}
 
 Metabase is connected to the `injury_risk_predictor` database hosted on the VM. The project dashboard is published through Metabase public sharing at `http://vm-fs26-019.dbm.ls.eee.intern:3000/public/dashboard/1a79c6a5-de14-450d-b23a-b735c4335cf5` for users on the HSLU network. For decision support the dashboard is organized into three analytical areas: a statistics overview, an observed athlete decision tool, and a hypothetical player scenario tool. Together, these views let users move from population-level injury-risk patterns to athlete-specific interpretation and finally to what-if planning for a new or not-yet-observed player.
 
-For the PDF report, Metabase visuals are integrated as static screenshots. Direct live dashboard embedding is possible for an HTML report through Metabase public links or signed embeds, but a PDF submission needs reproducible image exports. The screenshot below was captured from the live public dashboard after verifying the card results through the Metabase API.
+The Metabase configuration used for the dashboard is:
+
+| Configuration Item | Value |
+|---|---|
+| Metabase host | `vm-fs26-019.dbm.ls.eee.intern:3000` |
+| MySQL host from external clients | `vm-fs26-019.dbm.ls.eee.intern:3306` |
+| MySQL host in Metabase configuration | `localhost:3306` |
+| Database | `injury_risk_predictor` |
+| Dashboard access | Metabase public dashboard link on the HSLU network |
+
+![Metabase database connection settings for the MySQL database `injury_risk_predictor`. Metabase runs on the same VM as MySQL, so the connection host is configured as `localhost`.](Pictures/metabase_proof.jpg){#fig-metabase-proof width=95%}
+
+For the PDF report, Metabase visuals are integrated as static screenshots. Direct live dashboard embedding is possible for an HTML report through Metabase public links or signed embeds, but a PDF submission needs reproducible image exports. The screenshot below was captured from the live public dashboard.
 
 ![Live Metabase public dashboard with filters, adjusted risk distribution, athlete table, observed athlete tool, and hypothetical scenario tool.](Pictures/metabase_live_public_dashboard_wide.png){#fig-metabase-live-dashboard width=95%}
 
@@ -601,6 +616,8 @@ SQL output and Metabase visualization match exactly, so the dashboard is a faith
 
 # Conclusions & Lessons Learned {#sec-Conclusion}
 
+The following reflection is written from the perspective of the project team. It covers lessons learned in database technology, project organization, teamwork, and the use of artificial intelligence.
+
 ## Working with the Database
 
 Designing around three datasets with no shared player identifier forced a deliberate integration choice: conformed dimensions over a forced entity merge. This kept the schema honest - no artificial joins are claimed - but limits the analysis to aggregate-level cross-source comparisons. In hindsight, using `dim_age_group` as the sole cross-source key is methodologically sound for a proof-of-concept but would not scale to a production system where per-player longitudinal tracking is needed.
@@ -611,15 +628,15 @@ MySQL-specific constraints shaped several design decisions. The absence of nativ
 
 The theoretical concepts of database optimization became tangible through the performance measurements conducted during this project. A key finding is that well-designed and strategically applied indexes can substantially reduce query execution times. This effect was particularly evident in the dashboard filtering process, where an inefficient table scan was replaced by an index range scan following the implementation of appropriate composite indexes. The results demonstrate the critical role of aligning index columns with the actual filter patterns used by dashboards and analytical queries.
 
-## Project organization
+## Project Organization
 
 At the beginning of the project, the organization worked well because the team jointly defined the use case, selected suitable data sources, and agreed on the general project direction. However, during the implementation phase, coordination became more challenging. All team members had other modules and deadlines in parallel, and we were not always available at the same time in class or online. As a result, communication and prioritization were sometimes difficult.
-For the next project, we learned that a clearer plan at the beginning would be helpful. Responsibilities, deadlines, dependencies, and expected outputs should be defined more explicitly, so that every team member can plan their work better and delays can be identified earlier.
+This became especially visible because several tasks depended on each other: the report, dashboard cards, reconciliation checks, and performance measurements all relied on the final database schema and view definitions. When it was unclear who would finish which part by which date, bottlenecks appeared and dependent tasks could not move forward. Looking back, we would define responsibilities, realistic deadlines, dependencies, and expected outputs more explicitly at the beginning, so that each team member can plan their work better and delays can be identified earlier.
 
 ## Teamwork
 
 Overall, the collaboration in the team was positive. Our team was able to combine different strengths, especially in data analysis, SQL implementation, dashboard creation, and report writing. This helped us to complete the different parts of the project successfully.
-At the same time, the project showed that good teamwork requires regular coordination. Since many tasks depended on each other, short check-ins and a shared task overview would have helped to keep everyone aligned. Our main lesson learned is that clearer ownership of tasks and more regular updates would make teamwork more efficient in future projects.
+At the same time, the project showed that good teamwork requires regular coordination. Short check-ins and a shared task overview would have helped to keep everyone aligned when one person's work affected another part of the system. Our main lesson learned is that clearer ownership of tasks, earlier communication when a task cannot be finished as planned, and more regular updates would make teamwork more efficient in future projects and would save both time and frustration.
 
 ## Use of Artificial Intelligence
 
@@ -629,7 +646,7 @@ The main lesson learned is that AI can accelerate technical iteration, but it ca
 
 # References {.unnumbered}
 
-Ekstrand, J. et al. UEFA Injury Studies. *British Journal of Sports Medicine*, various years.
+Ekstrand, J., Hagglund, M., & Walden, M. (2011). *Injury incidence and injury patterns in professional football: the UEFA injury study.* British Journal of Sports Medicine, 45(7), 553-558. <https://doi.org/10.1136/bjsm.2009.060582>.
 
 Fuller, C. W. et al. (2006). *Consensus statement on injury definitions and data collection procedures in studies of football injuries.* British Journal of Sports Medicine, 40(3), 193-201.
 
