@@ -1,0 +1,86 @@
+%%{init: {'theme': 'neutral', 'er': {'diagramPadding': 40, 'useMaxWidth': false}}}%%
+erDiagram
+
+    dim_age_group {
+        int age_group_id PK
+        string age_group_label UK
+        int min_age
+        int max_age
+    }
+    dim_position_group {
+        int position_group_id PK
+        string position_group_code UK
+        string position_group_name
+    }
+    dim_date {
+        int date_id PK
+        date full_date UK
+        int year
+        int month
+    }
+    dim_athlete_multimodal {
+        int mm_athlete_id PK
+        string source_id UK
+        int age_group_id FK
+        string gender
+        string sport_type
+    }
+    fact_training_session {
+        int training_session_id PK
+        int mm_athlete_id FK
+        int date_id FK
+        decimal training_load
+        string training_intensity
+    }
+    fact_load_metrics {
+        int load_metrics_id PK
+        int mm_athlete_id FK
+        int date_id FK
+        decimal irs
+        string risk_band
+    }
+    dim_player_european {
+        int eu_player_id PK
+        string player_name UK
+        int age_group_id FK
+        int position_group_id FK
+    }
+    dim_team {
+        int team_id PK
+        string team_name UK
+        string league
+        string country
+    }
+    bridge_player_team {
+        int bridge_id PK
+        int eu_player_id FK
+        int team_id FK
+        string season
+    }
+    fact_injury_european {
+        int injury_id PK
+        int bridge_id FK
+        int date_id FK
+        string injury_name
+        int days_absent
+    }
+    fact_university_benchmark {
+        int university_row_id PK
+        int age_group_id FK
+        int position_group_id FK
+        int previous_injury_count
+    }
+
+    dim_age_group    ||--o{ dim_athlete_multimodal   : "groups"
+    dim_age_group    ||--o{ dim_player_european       : "groups"
+    dim_age_group    ||--o{ fact_university_benchmark : "groups"
+    dim_position_group ||--o{ dim_player_european     : "classifies"
+    dim_position_group ||--o{ fact_university_benchmark : "classifies"
+    dim_athlete_multimodal ||--o{ fact_training_session : "records"
+    dim_athlete_multimodal ||--o{ fact_load_metrics     : "derives"
+    dim_date ||--o{ fact_training_session  : "dates"
+    dim_date ||--o{ fact_load_metrics      : "dates"
+    dim_date ||--o{ fact_injury_european   : "dates"
+    dim_player_european ||--o{ bridge_player_team  : "plays for"
+    dim_team            ||--o{ bridge_player_team  : "has players"
+    bridge_player_team  ||--o{ fact_injury_european : "contextualizes"
